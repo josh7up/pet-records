@@ -50,6 +50,7 @@ OCR runs through Google AI Studio:
 - Set `GOOGLE_AI_STUDIO_API_KEY` in `.env`
 - Images and PDFs are sent directly to Gemini for text extraction
 - Default model is `gemini-2.0-flash` with automatic fallback models
+- Uploads are blocked when a duplicate invoice number is detected for the same household
 
 To enable verbose OCR debug logs in backend console:
 

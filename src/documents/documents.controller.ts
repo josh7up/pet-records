@@ -44,6 +44,12 @@ export class DocumentsController {
     if (!file) {
       throw new BadRequestException('File upload missing');
     }
+    await this.ocrService
+      .assertNoDuplicateInvoiceForUpload(dto, [file])
+      .catch(async (error) => {
+        await unlink(file.path).catch(() => undefined);
+        throw error;
+      });
 
     const document = await this.documentsService.create(dto, file);
     const ocr = await this.ocrService.processUploadedDocument(document.id);
@@ -64,6 +70,12 @@ export class DocumentsController {
     if (!files?.length) {
       throw new BadRequestException('Image upload missing');
     }
+    await this.ocrService
+      .assertNoDuplicateInvoiceForUpload(dto, files)
+      .catch(async (error) => {
+        await Promise.all(files.map(async (file) => unlink(file.path).catch(() => undefined)));
+        throw error;
+      });
 
     const document = await this.documentsService.createFromImages(dto, files);
     const ocr = await this.ocrService.processUploadedImages(

@@ -151,7 +151,7 @@ export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecord
         </button>
       </form>
       {status ? (
-        <p className={/failed|missing|choose|not configured/i.test(status) ? 'error' : ''}>
+        <p className={/failed|missing|choose|not configured|duplicate/i.test(status) ? 'error' : ''}>
           {status}
         </p>
       ) : null}

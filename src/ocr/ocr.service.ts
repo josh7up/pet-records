@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   DocumentStatus,
@@ -15,11 +20,21 @@ import {
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MockOcrDto } from './dto/mock-ocr.dto';
 import { ParsedPetSection, parseVetRecordText } from './mock-vet-record.parser';
+import type { UploadDocumentDto } from '../documents/dto/upload-document.dto';
 
 const dynamicImport = new Function(
   'specifier',
   'return import(specifier);',
 ) as (specifier: string) => Promise<any>;
+
+class DuplicateInvoiceError extends Error {
+  constructor(invoiceNumber: string) {
+    super(
+      `Duplicate invoice number detected: ${invoiceNumber}. This invoice already exists for the selected household.`,
+    );
+    this.name = 'DuplicateInvoiceError';
+  }
+}
 
 function normalizePetName(value: string) {
   return value
@@ -220,6 +235,131 @@ export class OcrService {
     this.logger.log(message);
   }
 
+  private normalizeInvoiceNumber(value: string) {
+    return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  private isLikelyInvoiceToken(value: string) {
+    const trimmed = value.trim().replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+    if (trimmed.length < 4 || trimmed.length > 40) {
+      return false;
+    }
+    return /\d/.test(trimmed);
+  }
+
+  private extractInvoiceCandidatesFromText(text: string) {
+    const candidates = new Set<string>();
+    const patterns = [
+      /(?:invoice|inv)\s*(?:number|no|num|#)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-_/]{2,39})/gi,
+      /\binv[-_\s]?([0-9]{4,20})\b/gi,
+    ];
+
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null = null;
+      while ((match = pattern.exec(text)) !== null) {
+        const raw = match[1]?.trim();
+        if (!raw || !this.isLikelyInvoiceToken(raw)) {
+          continue;
+        }
+        candidates.add(raw);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private extractInvoiceCandidatesFromFilename(filename: string) {
+    const cleaned = filename.replace(/\.[^.]+$/, ' ');
+    return this.extractInvoiceCandidatesFromText(cleaned);
+  }
+
+  private async collectInvoiceCandidatesForUpload(files: Express.Multer.File[]) {
+    const candidates = new Set<string>();
+
+    for (const file of files) {
+      for (const candidate of this.extractInvoiceCandidatesFromFilename(file.originalname || '')) {
+        candidates.add(candidate);
+      }
+      for (const candidate of this.extractInvoiceCandidatesFromFilename(file.filename || '')) {
+        candidates.add(candidate);
+      }
+
+      if (file.mimetype === 'application/pdf') {
+        try {
+          const pdfBytes = await readFile(file.path);
+          const asText = pdfBytes.toString('latin1').replace(/\u0000/g, ' ');
+          for (const candidate of this.extractInvoiceCandidatesFromText(asText)) {
+            candidates.add(candidate);
+          }
+        } catch (error) {
+          this.ocrDebug('Failed to inspect PDF for invoice precheck', {
+            path: file.path,
+            message: String((error as Error)?.message || error),
+          });
+        }
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  private async findDuplicateInvoiceForHousehold(
+    householdId: string,
+    invoiceCandidates: string[],
+    excludeDocumentId?: string,
+  ) {
+    if (!invoiceCandidates.length) {
+      return undefined;
+    }
+
+    const existingVisits = await this.prisma.visit.findMany({
+      where: {
+        invoiceNumber: { not: null },
+        document: {
+          householdId,
+          id: excludeDocumentId ? { not: excludeDocumentId } : undefined,
+        },
+      },
+      select: { invoiceNumber: true },
+    });
+
+    const normalizedExisting = new Set(
+      existingVisits
+        .map((visit) => visit.invoiceNumber)
+        .filter((invoiceNumber): invoiceNumber is string => Boolean(invoiceNumber))
+        .map((invoiceNumber) => this.normalizeInvoiceNumber(invoiceNumber))
+        .filter(Boolean),
+    );
+
+    for (const candidate of invoiceCandidates) {
+      const normalizedCandidate = this.normalizeInvoiceNumber(candidate);
+      if (!normalizedCandidate) {
+        continue;
+      }
+      if (normalizedExisting.has(normalizedCandidate)) {
+        return candidate;
+      }
+    }
+
+    return undefined;
+  }
+
+  async assertNoDuplicateInvoiceForUpload(
+    dto: Pick<UploadDocumentDto, 'householdId'>,
+    files: Express.Multer.File[],
+  ) {
+    const invoiceCandidates = await this.collectInvoiceCandidatesForUpload(files);
+    const duplicate = await this.findDuplicateInvoiceForHousehold(
+      dto.householdId,
+      invoiceCandidates,
+    );
+    if (duplicate) {
+      throw new ConflictException(
+        `Duplicate invoice number detected before OCR: ${duplicate}. This invoice already exists for the selected household.`,
+      );
+    }
+  }
+
   private inferMimeTypeFromPath(path: string) {
     const extension = extname(path).toLowerCase();
     if (extension === '.png') {
@@ -395,6 +535,14 @@ export class OcrService {
         where: { id: documentId },
         data: { ocrStatus: DocumentStatus.FAILED },
       });
+      if (error instanceof DuplicateInvoiceError) {
+        return {
+          documentId,
+          status: 'failed',
+          provider: 'google-ai-studio',
+          message: error.message,
+        };
+      }
       return {
         documentId,
         status: 'failed',
@@ -560,6 +708,17 @@ export class OcrService {
 
     if (!document) {
       throw new NotFoundException('Document not found');
+    }
+
+    if (parsed.invoiceNumber) {
+      const duplicate = await this.findDuplicateInvoiceForHousehold(
+        document.householdId,
+        [parsed.invoiceNumber],
+        documentId,
+      );
+      if (duplicate) {
+        throw new DuplicateInvoiceError(parsed.invoiceNumber);
+      }
     }
 
     let clinic = null;
