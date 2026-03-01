@@ -6,11 +6,8 @@ import {
   PetSpecies,
   Prisma,
 } from '@prisma/client';
-import { execFile } from 'node:child_process';
-import { copyFile, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, extname, join } from 'node:path';
-import { promisify } from 'node:util';
+import { readFile } from 'node:fs/promises';
+import { extname } from 'node:path';
 import {
   ReviewAction,
   ReviewPetCandidatesDto,
@@ -19,7 +16,6 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { MockOcrDto } from './dto/mock-ocr.dto';
 import { ParsedPetSection, parseVetRecordText } from './mock-vet-record.parser';
 
-const execFileAsync = promisify(execFile);
 const dynamicImport = new Function(
   'specifier',
   'return import(specifier);',
@@ -190,36 +186,8 @@ export class OcrService {
     private readonly config: ConfigService,
   ) {}
 
-  private getOcrEngine() {
-    return this.config.get<string>('OCR_ENGINE', 'tesseract').toLowerCase();
-  }
-
   private isOcrDebugEnabled() {
     return this.config.get<string>('OCR_DEBUG', 'false').toLowerCase() === 'true';
-  }
-
-  private getTesseractPsm() {
-    const parsed = Number(this.config.get<string>('OCR_TESSERACT_PSM', '4'));
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 13) {
-      return 4;
-    }
-    return parsed;
-  }
-
-  private getTesseractOem() {
-    const configured = this.config.get<string>('OCR_TESSERACT_OEM');
-    if (!configured) {
-      return undefined;
-    }
-    const parsed = Number(configured);
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 3) {
-      return undefined;
-    }
-    return parsed;
-  }
-
-  private getTesseractLanguage() {
-    return this.config.get<string>('OCR_TESSERACT_LANG', 'eng');
   }
 
   private getGoogleAiStudioKey() {
@@ -241,25 +209,6 @@ export class OcrService {
       .filter(Boolean);
   }
 
-  private isGoogleQuotaError(error: unknown) {
-    const status = (error as { status?: number })?.status;
-    const message = String((error as Error)?.message || error).toLowerCase();
-    return (
-      status === 429 ||
-      message.includes('quota exceeded') ||
-      message.includes('too many requests') ||
-      message.includes('rate limit')
-    );
-  }
-
-  private isGoogleLocalFallbackEnabled() {
-    return (
-      this.config
-        .get<string>('GOOGLE_AI_STUDIO_FALLBACK_TO_LOCAL', 'true')
-        .toLowerCase() === 'true'
-    );
-  }
-
   private ocrDebug(message: string, meta?: unknown) {
     if (!this.isOcrDebugEnabled()) {
       return;
@@ -269,63 +218,6 @@ export class OcrService {
       return;
     }
     this.logger.log(message);
-  }
-
-  private async rasterizePdfToImages(pdfPath: string) {
-    const tempDir = await mkdtemp(join(tmpdir(), 'pet-record-pdf-'));
-    const prefix = join(tempDir, 'page');
-
-    this.ocrDebug('Rasterizing PDF', { pdfPath, prefix });
-    await execFileAsync('pdftoppm', ['-png', '-r', '300', pdfPath, prefix]);
-
-    const files = await readdir(tempDir);
-    const imagePaths = files
-      .filter((file) => /^page-\d+\.png$/.test(file))
-      .sort((a, b) => {
-        const aNum = Number(a.match(/\d+/)?.[0] || 0);
-        const bNum = Number(b.match(/\d+/)?.[0] || 0);
-        return aNum - bNum;
-      })
-      .map((file) => join(tempDir, file));
-
-    this.ocrDebug('Rasterization complete', {
-      pageCount: imagePaths.length,
-      tempDir,
-    });
-    return { tempDir, imagePaths };
-  }
-
-  private normalizeScribeText(result: unknown): string {
-    if (typeof result === 'string') {
-      return result;
-    }
-    if (Array.isArray(result)) {
-      return result
-        .map((item) => (typeof item === 'string' ? item : JSON.stringify(item)))
-        .join('\n\n');
-    }
-    if (result && typeof result === 'object') {
-      const candidate = result as Record<string, unknown>;
-      if (typeof candidate.text === 'string') {
-        return candidate.text;
-      }
-      if (Array.isArray(candidate.text) || typeof candidate.text === 'object') {
-        return JSON.stringify(candidate.text);
-      }
-    }
-    return String(result || '');
-  }
-
-  private async runScribeExtract(paths: string[]) {
-    this.ocrDebug('Running scribe extract', { fileCount: paths.length });
-    const module = await dynamicImport('scribe.js-ocr');
-    const scribe = module?.default ?? module;
-    if (!scribe || typeof scribe.extractText !== 'function') {
-      throw new Error('scribe.js-ocr extractText API unavailable');
-    }
-    const result = await scribe.extractText(paths);
-    this.ocrDebug('Scribe extract finished');
-    return this.normalizeScribeText(result);
   }
 
   private inferMimeTypeFromPath(path: string) {
@@ -437,213 +329,6 @@ export class OcrService {
     );
   }
 
-  private async preprocessWithImageMagick(inputPath: string, outputPath: string) {
-    const baseArgs = [
-      inputPath,
-      '-auto-orient',
-      '-resize',
-      '2200x',
-      '-colorspace',
-      'Gray',
-      '-normalize',
-      '-sharpen',
-      '0x1.4',
-      '-threshold',
-      '68%',
-      outputPath,
-    ];
-
-    try {
-      await execFileAsync('magick', baseArgs);
-      return 'magick';
-    } catch (firstError) {
-      const err = firstError as NodeJS.ErrnoException;
-      if (err.code && err.code !== 'ENOENT') {
-        throw firstError;
-      }
-    }
-
-    try {
-      await execFileAsync('convert', baseArgs);
-      return 'convert';
-    } catch (secondError) {
-      const err = secondError as NodeJS.ErrnoException;
-      if (err.code && err.code !== 'ENOENT') {
-        throw secondError;
-      }
-    }
-
-    throw new Error('ImageMagick command not found (`magick` or `convert`)');
-  }
-
-  private async preprocessWithSips(inputPath: string, outputPath: string) {
-    await execFileAsync('sips', [
-      '-s',
-      'format',
-      'png',
-      '--resampleHeightWidthMax',
-      '3200',
-      inputPath,
-      '--out',
-      outputPath,
-    ]);
-    return 'sips';
-  }
-
-  private async preprocessImagesForTesseract(paths: string[]) {
-    const tempDir = await mkdtemp(join(tmpdir(), 'pet-record-ocr-pre-'));
-    const processedPaths: string[] = [];
-
-    try {
-      for (let index = 0; index < paths.length; index += 1) {
-        const path = paths[index];
-        const outputBase = join(tempDir, `page-${index + 1}`);
-        let processedPath = `${outputBase}.png`;
-        let strategy = 'none';
-        try {
-          strategy = await this.preprocessWithImageMagick(path, processedPath);
-        } catch (error) {
-          this.ocrDebug('ImageMagick preprocessing unavailable', {
-            inputPath: path,
-            error: String((error as Error)?.message || error),
-          });
-          try {
-            strategy = await this.preprocessWithSips(path, processedPath);
-          } catch (sipsError) {
-            const inputExt = extname(path).toLowerCase();
-            const safeExt = ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp', '.webp'].includes(
-              inputExt,
-            )
-              ? inputExt
-              : '.jpg';
-            processedPath = `${outputBase}${safeExt}`;
-            await copyFile(path, processedPath);
-            strategy = 'copy-original';
-            this.ocrDebug('Sips preprocessing unavailable; using original image', {
-              inputPath: path,
-              error: String((sipsError as Error)?.message || sipsError),
-            });
-          }
-        }
-        this.ocrDebug('OCR preprocess page complete', {
-          inputPath: path,
-          inputFile: basename(path),
-          outputPath: processedPath,
-          strategy,
-        });
-        processedPaths.push(processedPath);
-      }
-      return { tempDir, processedPaths };
-    } catch (error) {
-      await rm(tempDir, { recursive: true, force: true });
-      throw error;
-    }
-  }
-
-  private async runTesseractExtract(paths: string[]) {
-    const tesseractPsm = this.getTesseractPsm();
-    const tesseractOem = this.getTesseractOem();
-    const tesseractLang = this.getTesseractLanguage();
-    const { tempDir, processedPaths } = await this.preprocessImagesForTesseract(paths);
-    const pageTexts: string[] = [];
-
-    const scoreOcrText = (text: string) => {
-      const normalized = text.toLowerCase();
-      const keywordPatterns = [
-        /\bveterinary\b/g,
-        /\bprinted\b/g,
-        /\bdate\b/g,
-        /\baccount\b/g,
-        /\binvoice\b/g,
-        /\bpatient\b/g,
-        /\breminders?\b/g,
-        /\bweight\b/g,
-        /\bpurevax\b/g,
-        /\brabies\b/g,
-        /\bwellness\b/g,
-      ];
-      const keywordHits = keywordPatterns.reduce(
-        (acc, pattern) => acc + (normalized.match(pattern)?.length || 0),
-        0,
-      );
-      const dateHits = (normalized.match(/\b\d{2}-\d{2}-\d{2}\b/g) || []).length;
-      const amountHits = (normalized.match(/\b-?\d+\.\d{2}\b/g) || []).length;
-      const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      const printable = text.replace(/\s/g, '');
-      const weirdChars = (printable.match(/[^A-Za-z0-9.,:;()\-/$%']/g) || []).length;
-      const weirdRatio = printable.length ? weirdChars / printable.length : 1;
-      return keywordHits * 10 + dateHits * 4 + amountHits * 2 + lines.length * 0.1 - weirdRatio * 30;
-    };
-
-    const passConfigs = [
-      { name: `psm-${tesseractPsm}`, psm: tesseractPsm, extra: [] as string[] },
-      { name: 'psm-6', psm: 6, extra: [] as string[] },
-      { name: 'psm-11', psm: 11, extra: [] as string[] },
-      { name: 'psm-4-no-invert', psm: 4, extra: ['-c', 'tessedit_do_invert=0'] },
-      { name: 'psm-6-no-invert', psm: 6, extra: ['-c', 'tessedit_do_invert=0'] },
-    ];
-
-    try {
-      for (const path of processedPaths) {
-        let bestText = '';
-        let bestScore = Number.NEGATIVE_INFINITY;
-        let bestPass = '';
-
-        for (const pass of passConfigs) {
-          const args = [path, 'stdout', '-l', tesseractLang, '--psm', String(pass.psm)];
-          if (tesseractOem !== undefined) {
-            args.push('--oem', String(tesseractOem));
-          }
-          args.push(
-            '-c',
-            'preserve_interword_spaces=1',
-            '-c',
-            'user_defined_dpi=300',
-            ...pass.extra,
-          );
-          this.ocrDebug('Running tesseract', { path, pass: pass.name, args });
-          const started = Date.now();
-          const { stdout, stderr } = await execFileAsync('tesseract', args, {
-            maxBuffer: 25 * 1024 * 1024,
-          });
-          if (stderr?.trim()) {
-            this.ocrDebug('Tesseract stderr', {
-              path,
-              pass: pass.name,
-              preview: stderr.slice(0, 1200),
-            });
-          }
-          const score = scoreOcrText(stdout);
-          this.ocrDebug('Tesseract pass scored', {
-            path,
-            pass: pass.name,
-            elapsedMs: Date.now() - started,
-            chars: stdout.length,
-            score,
-            preview: stdout.slice(0, 250),
-          });
-          if (score > bestScore) {
-            bestScore = score;
-            bestText = stdout;
-            bestPass = pass.name;
-          }
-        }
-
-        this.ocrDebug('Selected best tesseract pass', {
-          path,
-          bestPass,
-          bestScore,
-          chars: bestText.length,
-          preview: bestText.slice(0, 300),
-        });
-        pageTexts.push(bestText);
-      }
-      return pageTexts.join('\n\n');
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
-  }
-
   async enqueueDocument(documentId: string) {
     await this.prisma.document.update({
       where: { id: documentId },
@@ -658,7 +343,11 @@ export class OcrService {
     };
   }
 
-  async processUploadedImages(documentId: string, imagePaths: string[]) {
+  async processUploadedImages(
+    documentId: string,
+    imagePaths: string[],
+    mimeTypeOverrides?: string[],
+  ) {
     if (!imagePaths.length) {
       return this.enqueueDocument(documentId);
     }
@@ -672,31 +361,10 @@ export class OcrService {
     try {
       this.ocrDebug('Starting OCR processing for images', {
         documentId,
-        engine: this.getOcrEngine(),
         imageCount: imagePaths.length,
       });
-      if (this.getOcrEngine() === 'scribe') {
-        const combined = await this.runScribeExtract(imagePaths);
-        pageTexts.push(combined);
-      } else if (this.getOcrEngine() === 'google') {
-        try {
-          const combined = await this.runGoogleStudioExtract(imagePaths);
-          pageTexts.push(combined);
-        } catch (googleError) {
-          if (this.isGoogleQuotaError(googleError) && this.isGoogleLocalFallbackEnabled()) {
-            this.logger.warn(
-              'Google AI Studio quota/rate-limited. Falling back to local tesseract OCR.',
-            );
-            const combined = await this.runTesseractExtract(imagePaths);
-            pageTexts.push(combined);
-          } else {
-            throw googleError;
-          }
-        }
-      } else {
-        const combined = await this.runTesseractExtract(imagePaths);
-        pageTexts.push(combined);
-      }
+      const combined = await this.runGoogleStudioExtract(imagePaths, mimeTypeOverrides);
+      pageTexts.push(combined);
     } catch (error) {
       this.logger.error('OCR image processing failed', error as Error);
       await this.prisma.document.update({
@@ -706,8 +374,10 @@ export class OcrService {
       return {
         documentId,
         status: 'failed',
-        provider: this.getOcrEngine(),
-        message: `OCR failed using ${this.getOcrEngine()} while reading uploaded image pages.`,
+        provider: 'google-ai-studio',
+        message: `OCR failed using Google AI Studio while reading uploaded image pages. ${String(
+          (error as Error)?.message || error,
+        )}`,
       };
     }
 
@@ -728,7 +398,7 @@ export class OcrService {
       return {
         documentId,
         status: 'failed',
-        provider: this.getOcrEngine(),
+        provider: 'google-ai-studio',
         message:
           'OCR completed but parser could not map pet data. Use OCR reprocess with corrected text or manual field entry.',
       };
@@ -743,7 +413,7 @@ export class OcrService {
       return {
         documentId,
         status: 'needs_review',
-        provider: this.getOcrEngine(),
+        provider: 'google-ai-studio',
         message: 'OCR completed. Review detected pet names before creating new pets.',
       };
     }
@@ -751,7 +421,7 @@ export class OcrService {
     return {
       documentId,
       status: 'parsed',
-      provider: this.getOcrEngine(),
+      provider: 'google-ai-studio',
       message: 'OCR and parsing completed.',
     };
   }
@@ -770,7 +440,6 @@ export class OcrService {
       documentId,
       mimeType: document.mimeType,
       filePath: document.filePath,
-      engine: this.getOcrEngine(),
     });
 
     if (document.mimeType === 'image/png' || document.mimeType === 'image/jpeg') {
@@ -778,174 +447,7 @@ export class OcrService {
     }
 
     if (document.mimeType === 'application/pdf') {
-      if (this.getOcrEngine() === 'google') {
-        try {
-          await this.prisma.document.update({
-            where: { id: documentId },
-            data: { ocrStatus: DocumentStatus.OCR_IN_PROGRESS },
-          });
-          let combined = '';
-          try {
-            combined = await this.runGoogleStudioExtract(
-              [document.filePath],
-              ['application/pdf'],
-            );
-          } catch (googleError) {
-            if (!(this.isGoogleQuotaError(googleError) && this.isGoogleLocalFallbackEnabled())) {
-              throw googleError;
-            }
-
-            this.logger.warn(
-              'Google AI Studio quota/rate-limited for PDF. Falling back to pdftoppm+tesseract OCR.',
-            );
-            let tempDir: string | undefined;
-            try {
-              const rasterized = await this.rasterizePdfToImages(document.filePath);
-              tempDir = rasterized.tempDir;
-              if (!rasterized.imagePaths.length) {
-                throw new Error('No pages were rendered from PDF');
-              }
-              combined = await this.runTesseractExtract(rasterized.imagePaths);
-            } finally {
-              if (tempDir) {
-                await rm(tempDir, { recursive: true, force: true });
-              }
-            }
-          }
-          await this.parseAndPersist(documentId, combined, [combined]);
-          const updated = await this.prisma.document.findUnique({
-            where: { id: documentId },
-            select: { ocrStatus: true },
-          });
-          if (updated?.ocrStatus === DocumentStatus.NEEDS_REVIEW) {
-            return {
-              documentId,
-              status: 'needs_review',
-              provider: 'google-ai-studio',
-              message: 'AI extraction completed. Review detected pet names before creating new pets.',
-            };
-          }
-          return {
-            documentId,
-            status: 'parsed',
-            provider: 'google-ai-studio',
-            message: 'AI extraction and parsing completed.',
-          };
-        } catch (googleError) {
-          this.logger.error('Google AI Studio extraction failed', googleError as Error);
-          await this.prisma.document.update({
-            where: { id: documentId },
-            data: { ocrStatus: DocumentStatus.FAILED },
-          });
-          return {
-            documentId,
-            status: 'failed',
-            provider: 'google-ai-studio',
-            message: `AI extraction failed. ${String(
-              (googleError as Error)?.message || googleError,
-            )}`,
-          };
-        }
-      }
-
-      if (this.getOcrEngine() === 'scribe') {
-        try {
-          await this.prisma.document.update({
-            where: { id: documentId },
-            data: { ocrStatus: DocumentStatus.OCR_IN_PROGRESS },
-          });
-          const combined = await this.runScribeExtract([document.filePath]);
-          await this.parseAndPersist(documentId, combined, [combined]);
-          const updated = await this.prisma.document.findUnique({
-            where: { id: documentId },
-            select: { ocrStatus: true },
-          });
-          if (updated?.ocrStatus === DocumentStatus.NEEDS_REVIEW) {
-            return {
-              documentId,
-              status: 'needs_review',
-              provider: 'scribe',
-              message: 'OCR completed. Review detected pet names before creating new pets.',
-            };
-          }
-          return {
-            documentId,
-            status: 'parsed',
-            provider: 'scribe',
-            message: 'OCR and parsing completed.',
-          };
-        } catch (scribeError) {
-          this.logger.error('Scribe OCR failed, attempting fallback', scribeError as Error);
-          let tempDir: string | undefined;
-          try {
-            const rasterized = await this.rasterizePdfToImages(document.filePath);
-            tempDir = rasterized.tempDir;
-            if (!rasterized.imagePaths.length) {
-              throw new Error('No pages were rendered from PDF');
-            }
-            const fallbackResult = await this.processUploadedImages(
-              documentId,
-              rasterized.imagePaths,
-            );
-            return {
-              ...fallbackResult,
-              provider: 'scribe->tesseract-fallback',
-              message:
-                fallbackResult.status === 'parsed' ||
-                fallbackResult.status === 'needs_review'
-                  ? 'Scribe OCR failed; fallback OCR completed via pdftoppm+tesseract.'
-                  : `Scribe OCR failed and fallback OCR failed. Scribe error: ${String(
-                      (scribeError as Error)?.message || scribeError,
-                    )}`,
-            };
-          } catch (fallbackError) {
-            this.logger.error('Fallback OCR also failed', fallbackError as Error);
-            await this.prisma.document.update({
-              where: { id: documentId },
-              data: { ocrStatus: DocumentStatus.FAILED },
-            });
-            return {
-              documentId,
-              status: 'failed',
-              provider: 'scribe->tesseract-fallback',
-              message: `PDF OCR failed using scribe and fallback. Scribe: ${String(
-                (scribeError as Error)?.message || scribeError,
-              )}; fallback: ${String((fallbackError as Error)?.message || fallbackError)}`,
-            };
-          } finally {
-            if (tempDir) {
-              await rm(tempDir, { recursive: true, force: true });
-            }
-          }
-        }
-      }
-
-      let tempDir: string | undefined;
-      try {
-        const rasterized = await this.rasterizePdfToImages(document.filePath);
-        tempDir = rasterized.tempDir;
-        if (!rasterized.imagePaths.length) {
-          throw new Error('No pages were rendered from PDF');
-        }
-        return await this.processUploadedImages(documentId, rasterized.imagePaths);
-      } catch (error) {
-        this.logger.error('PDF rasterization/tesseract path failed', error as Error);
-        await this.prisma.document.update({
-          where: { id: documentId },
-          data: { ocrStatus: DocumentStatus.FAILED },
-        });
-        return {
-          documentId,
-          status: 'failed',
-          provider: 'pdftoppm+tesseract',
-          message:
-            'PDF OCR failed. Install poppler-utils (`pdftoppm`) or use image upload mode.',
-        };
-      } finally {
-        if (tempDir) {
-          await rm(tempDir, { recursive: true, force: true });
-        }
-      }
+      return this.processUploadedImages(documentId, [document.filePath], ['application/pdf']);
     }
 
     await this.prisma.document.update({
@@ -958,7 +460,7 @@ export class OcrService {
       status: 'failed',
       provider: 'configure-textract-or-document-ai',
       message:
-        'Unsupported file type for local OCR. Upload PDF/JPG/PNG.',
+        'Unsupported file type for OCR extraction. Upload PDF/JPG/PNG.',
     };
   }
 

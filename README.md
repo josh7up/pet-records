@@ -44,42 +44,17 @@ npm run start:dev
 Backend API base URL: `http://localhost:3000/api`
 Swagger UI: `http://localhost:3000/api/docs`
 
-## Local OCR prerequisites
+## OCR prerequisites
 
-Recommended engine is Google AI Studio (`OCR_ENGINE=google`):
+OCR runs through Google AI Studio:
 - Set `GOOGLE_AI_STUDIO_API_KEY` in `.env`
 - Images and PDFs are sent directly to Gemini for text extraction
 - Default model is `gemini-2.0-flash` with automatic fallback models
-
-Optional local engines:
-- `OCR_ENGINE=tesseract` (images direct, PDFs via `pdftoppm`)
-- `OCR_ENGINE=scribe` (`scribe.js-ocr`; Node 20/22 LTS preferred due worker/runtime stability)
 
 To enable verbose OCR debug logs in backend console:
 
 ```bash
 OCR_DEBUG=true
-```
-
-Tesseract tuning (recommended for phone photos of receipts/invoices):
-
-```bash
-OCR_TESSERACT_PSM=4
-OCR_TESSERACT_LANG=eng
-# optional
-OCR_TESSERACT_OEM=1
-```
-
-Local Tesseract flow now preprocesses each page before OCR and logs page strategy when `OCR_DEBUG=true`:
-- ImageMagick (`magick`/`convert`) if available: auto-orient, upscale, grayscale, normalize, sharpen, threshold
-- fallback on macOS: `sips` conversion/resample
-- last resort: original image
-- OCR runs multiple Tesseract pass configs and auto-selects the best-scoring text per page
-
-macOS (Homebrew):
-
-```bash
-brew install tesseract poppler
 ```
 
 Google AI Studio dependency:
@@ -95,11 +70,7 @@ GOOGLE_AI_STUDIO_MODEL=gemini-2.0-flash
 GOOGLE_AI_STUDIO_FALLBACK_MODELS=gemini-2.0-flash,gemini-2.0-flash-lite,gemini-1.5-flash-latest
 ```
 
-If Google AI Studio is quota/rate-limited (429), backend can auto-fallback to local OCR:
-
-```bash
-GOOGLE_AI_STUDIO_FALLBACK_TO_LOCAL=true
-```
+If Google AI Studio is quota/rate-limited (429), requests fail until quota resets.
 
 ## Frontend setup
 

@@ -5,9 +5,9 @@
   "description": "NestJS backend for OCR pet record management",
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
+    "build": "node ./node_modules/@nestjs/cli/bin/nest.js build",
+    "start": "node ./node_modules/@nestjs/cli/bin/nest.js start",
+    "start:dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest",
@@ -35,7 +35,6 @@
     "pdf-lib": "^1.17.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "scribe.js-ocr": "^0.9.1",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
