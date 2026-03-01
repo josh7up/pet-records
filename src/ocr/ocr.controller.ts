@@ -7,11 +7,6 @@ import { OcrService } from './ocr.service';
 export class OcrController {
   constructor(private readonly ocrService: OcrService) {}
 
-  @Post(':documentId/reprocess')
-  reprocess(@Param('documentId') documentId: string) {
-    return this.ocrService.processUploadedDocument(documentId);
-  }
-
   @Post(':documentId/mock-parse')
   mockParse(@Param('documentId') documentId: string, @Body() dto: MockOcrDto) {
     return this.ocrService.mockParseDocument(documentId, dto);

@@ -74,7 +74,6 @@ export const api = {
     if (payload.visitDate) formData.append('visitDate', payload.visitDate);
     return upload('/documents/upload-images', formData);
   },
-  reprocessDocument: (documentId: string) => post(`/ocr/${documentId}/reprocess`),
   reviewPets: (documentId: string, payload: unknown) =>
     post(`/ocr/${documentId}/review-pets`, payload),
 };

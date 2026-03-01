@@ -63,7 +63,7 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
     setMessage('');
     try {
       await api.reviewPets(document.id, { decisions });
-      setMessage('Pet review saved and document reprocessed.');
+      setMessage('Pet review saved and document updated.');
       onChanged();
     } catch (error) {
       setMessage((error as Error).message);

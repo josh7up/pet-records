@@ -107,7 +107,6 @@ Frontend URL: `http://localhost:5173`
 - `GET /api/documents/:id`
 - `GET /api/documents/:id/file`
 - `PATCH /api/documents/:id/fields`
-- `POST /api/ocr/:documentId/reprocess`
 - `POST /api/ocr/:documentId/mock-parse`
 - `GET /api/visits`
 - `GET /api/records/search`

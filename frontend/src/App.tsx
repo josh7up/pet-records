@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
 import { DocumentInspector } from './components/DocumentInspector';
-import { FailedDocumentsPanel } from './components/FailedDocumentsPanel';
 import { ReviewCandidatesPanel } from './components/ReviewCandidatesPanel';
 import { SearchFilters, type SearchFilterState } from './components/SearchFilters';
 import { SearchResults } from './components/SearchResults';
 import { UploadRecordPanel } from './components/UploadRecordPanel';
 import { WeightChartPanel } from './components/WeightChartPanel';
-import type { DocumentRecord, Household, Pet, SearchVisit, WeightPoint } from './types/api';
+import type { Household, Pet, SearchVisit, WeightPoint } from './types/api';
 
 function toQueryString(filters: SearchFilterState) {
   const params = new URLSearchParams();
@@ -27,8 +26,9 @@ export function App() {
   const [visits, setVisits] = useState<SearchVisit[]>([]);
   const [selectedVisit, setSelectedVisit] = useState<SearchVisit | undefined>();
   const [weightPoints, setWeightPoints] = useState<WeightPoint[]>([]);
-  const [failedDocuments, setFailedDocuments] = useState<DocumentRecord[]>([]);
-  const [reviewDocuments, setReviewDocuments] = useState<DocumentRecord[]>([]);
+  const [reviewDocuments, setReviewDocuments] = useState<
+    Awaited<ReturnType<typeof api.documents>>['data']
+  >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
@@ -50,10 +50,8 @@ export function App() {
     }
   }
 
-  async function loadFailedDocuments() {
+  async function loadReviewDocuments() {
     try {
-      const docs = await api.documents('status=FAILED&pageSize=50');
-      setFailedDocuments(docs.data);
       const reviewDocs = await api.documents('status=NEEDS_REVIEW&pageSize=50');
       setReviewDocuments(reviewDocs.data);
     } catch (loadError) {
@@ -63,7 +61,7 @@ export function App() {
 
   useEffect(() => {
     void loadBaseData();
-    void loadFailedDocuments();
+    void loadReviewDocuments();
   }, []);
 
   useEffect(() => {
@@ -103,7 +101,7 @@ export function App() {
 
   async function refreshAfterUpload() {
     await loadBaseData();
-    await loadFailedDocuments();
+    await loadReviewDocuments();
     try {
       const data = await api.searchVisits('pageSize=50');
       setVisits(data.data);
@@ -126,13 +124,6 @@ export function App() {
         households={households}
         pets={pets}
         onUploaded={() => {
-          void refreshAfterUpload();
-        }}
-      />
-
-      <FailedDocumentsPanel
-        documents={failedDocuments}
-        onChanged={() => {
           void refreshAfterUpload();
         }}
       />

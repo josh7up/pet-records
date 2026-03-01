@@ -400,7 +400,7 @@ export class OcrService {
         status: 'failed',
         provider: 'google-ai-studio',
         message:
-          'OCR completed but parser could not map pet data. Use OCR reprocess with corrected text or manual field entry.',
+          'OCR completed but parser could not map pet data. Fix the upload content and try uploading again, or use manual field entry.',
       };
     }
 
