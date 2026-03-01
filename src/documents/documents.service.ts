@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DocumentStatus, Prisma } from '@prisma/client';
 import { PDFDocument } from 'pdf-lib';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ListDocumentsDto } from './dto/list-documents.dto';
@@ -181,5 +181,24 @@ export class DocumentsService {
     ]);
 
     return this.findOne(id);
+  }
+
+  async remove(id: string) {
+    const document = await this.prisma.document.findUnique({
+      where: { id },
+      select: { id: true, filePath: true },
+    });
+
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    await this.prisma.document.delete({
+      where: { id },
+    });
+
+    await unlink(document.filePath).catch(() => undefined);
+
+    return { id: document.id, deleted: true };
   }
 }

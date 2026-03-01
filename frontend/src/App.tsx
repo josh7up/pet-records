@@ -159,7 +159,14 @@ export function App() {
         />
       </section>
 
-      <DocumentInspector visit={selectedVisit} />
+      <DocumentInspector
+        visit={selectedVisit}
+        onDeleted={(deletedDocumentId) => {
+          setSelectedVisit(undefined);
+          setVisits((prev) => prev.filter((visit) => visit.document.id !== deletedDocumentId));
+          void refreshAfterUpload();
+        }}
+      />
       <WeightChartPanel pet={selectedPet} points={weightPoints} />
     </main>
   );

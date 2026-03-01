@@ -60,6 +60,16 @@ async function post(path: string, body?: unknown) {
   return response.json();
 }
 
+async function del(path: string) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, `Request failed: ${response.status}`));
+  }
+  return response.json();
+}
+
 export const api = {
   baseUrl: API_BASE,
   households: () => request<Household[]>('/households'),
@@ -90,6 +100,7 @@ export const api = {
     if (payload.visitDate) formData.append('visitDate', payload.visitDate);
     return upload('/documents/upload-images', formData);
   },
+  deleteDocument: (documentId: string) => del(`/documents/${documentId}`),
   reviewPets: (documentId: string, payload: unknown) =>
     post(`/ocr/${documentId}/review-pets`, payload),
 };

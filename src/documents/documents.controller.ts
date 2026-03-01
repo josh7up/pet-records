@@ -1,4 +1,5 @@
 import {
+  Delete,
   Controller,
   Get,
   NotFoundException,
@@ -114,5 +115,10 @@ export class DocumentsController {
     @Body() dto: UpsertExtractedFieldsDto,
   ) {
     return this.documentsService.upsertExtractedFields(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string) {
+    return this.documentsService.remove(id);
   }
 }
