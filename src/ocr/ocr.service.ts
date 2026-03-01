@@ -547,8 +547,9 @@ export class OcrService {
         documentId,
         status: 'failed',
         provider: 'google-ai-studio',
-        message:
-          'OCR completed but parser could not map pet data. Fix the upload content and try uploading again, or use manual field entry.',
+        message: `OCR completed but required fields were missing or invalid. ${String(
+          (error as Error)?.message || error,
+        )}`,
       };
     }
 
@@ -721,6 +722,13 @@ export class OcrService {
       }
     }
 
+    if (!parsed.visitDate) {
+      throw new Error(
+        'Visit date was not detected in OCR text. Please upload a clearer document that includes the visit date.',
+      );
+    }
+    const extractedVisitDate: Date = parsed.visitDate;
+
     let clinic = null;
     if (parsed.clinicName) {
       clinic = await this.prisma.clinic.findFirst({
@@ -770,25 +778,14 @@ export class OcrService {
 
       const parsedSections: ParsedPetSection[] = parsed.petSections.length
         ? parsed.petSections
-        : document.pet
-          ? [
-              {
-                petName: document.pet.name,
-                totalCharges: parsed.totalCharges,
-                weightValue: parsed.weightValue,
-                weightUnit: parsed.weightUnit,
-                lineItems: parsed.lineItems,
-                reminders: parsed.reminders,
-              },
-            ]
-          : extractHighConfidencePetNamesFromRawText(rawText).map((petName) => ({
-              petName,
-              totalCharges: undefined,
-              weightValue: undefined,
-              weightUnit: undefined,
-              lineItems: [],
-              reminders: [],
-            }));
+        : extractHighConfidencePetNamesFromRawText(rawText).map((petName) => ({
+            petName,
+            totalCharges: undefined,
+            weightValue: undefined,
+            weightUnit: undefined,
+            lineItems: [],
+            reminders: [],
+          }));
 
       const highConfidenceNames = new Set(
         extractHighConfidencePetNamesFromRawText(rawText).map((name) => normalizePetName(name)),
@@ -806,7 +803,9 @@ export class OcrService {
       });
 
       if (!vettedSections.length) {
-        throw new Error('No pet sections detected in OCR text');
+        throw new Error(
+          'Pet name was not detected in OCR text. Please upload a clearer document that includes the pet name.',
+        );
       }
 
       if (vettedSections.length > 6) {
@@ -885,7 +884,7 @@ export class OcrService {
           where: { id: documentId },
           data: {
             clinicId: clinic?.id,
-            visitDate: parsed.visitDate,
+            visitDate: extractedVisitDate,
             petId: null,
             ocrStatus: DocumentStatus.NEEDS_REVIEW,
             processedAt: new Date(),
@@ -913,8 +912,7 @@ export class OcrService {
       }
 
       const isSinglePetDocument = sectionsWithPets.length === 1;
-      const effectiveVisitDate =
-        parsed.visitDate || document.visitDate || document.uploadedAt || new Date();
+      const effectiveVisitDate = extractedVisitDate;
 
       for (const { section, pet } of sectionsWithPets) {
         const visit = await tx.visit.upsert({
@@ -1015,7 +1013,7 @@ export class OcrService {
         data: {
           clinicId: clinic?.id,
           petId: sectionsWithPets.length === 1 ? sectionsWithPets[0].pet.id : null,
-          visitDate: parsed.visitDate,
+          visitDate: extractedVisitDate,
           ocrStatus: DocumentStatus.PARSE_COMPLETE,
           processedAt: new Date(),
         },

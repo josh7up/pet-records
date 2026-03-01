@@ -1,29 +1,21 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { api } from '../api/client';
-import type { Household, Pet } from '../types/api';
+import type { Household } from '../types/api';
 
 type UploadMode = 'single' | 'images';
 
 interface UploadRecordPanelProps {
   households: Household[];
-  pets: Pet[];
   onUploaded: () => void;
 }
 
-export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecordPanelProps) {
+export function UploadRecordPanel({ households, onUploaded }: UploadRecordPanelProps) {
   const [mode, setMode] = useState<UploadMode>('single');
   const [householdId, setHouseholdId] = useState('');
-  const [petId, setPetId] = useState('');
-  const [visitDate, setVisitDate] = useState('');
   const [singleFile, setSingleFile] = useState<File | null>(null);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  const filteredPets = useMemo(
-    () => pets.filter((pet) => !householdId || pet.householdId === householdId),
-    [pets, householdId],
-  );
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -38,8 +30,6 @@ export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecord
       setSubmitting(true);
       const payload = {
         householdId,
-        petId: petId || undefined,
-        visitDate: visitDate || undefined,
       };
 
       if (mode === 'single') {
@@ -49,8 +39,11 @@ export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecord
         }
         const result = await api.uploadDocument(singleFile, payload);
         const message = result?.ocr?.message || 'Upload complete.';
+        const isFailed = result?.ocr?.status === 'failed';
         setStatus(message);
-        onUploaded();
+        if (!isFailed) {
+          onUploaded();
+        }
         setSingleFile(null);
         setImageFiles([]);
         return;
@@ -61,8 +54,11 @@ export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecord
         }
         const result = await api.uploadDocumentImages(imageFiles, payload);
         const message = result?.ocr?.message || 'Upload complete.';
+        const isFailed = result?.ocr?.status === 'failed';
         setStatus(message);
-        onUploaded();
+        if (!isFailed) {
+          onUploaded();
+        }
         setSingleFile(null);
         setImageFiles([]);
         return;
@@ -92,7 +88,6 @@ export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecord
             value={householdId}
             onChange={(event) => {
               setHouseholdId(event.target.value);
-              setPetId('');
             }}
           >
             <option value="">Select household</option>
@@ -102,27 +97,6 @@ export function UploadRecordPanel({ households, pets, onUploaded }: UploadRecord
               </option>
             ))}
           </select>
-        </label>
-
-        <label className="field">
-          Pet (optional)
-          <select value={petId} onChange={(event) => setPetId(event.target.value)}>
-            <option value="">All/Unknown</option>
-            {filteredPets.map((pet) => (
-              <option key={pet.id} value={pet.id}>
-                {pet.name} ({pet.species})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field">
-          Visit date (optional)
-          <input
-            type="date"
-            value={visitDate}
-            onChange={(event) => setVisitDate(event.target.value)}
-          />
         </label>
 
         {mode === 'single' ? (

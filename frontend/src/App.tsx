@@ -122,7 +122,6 @@ export function App() {
 
       <UploadRecordPanel
         households={households}
-        pets={pets}
         onUploaded={() => {
           void refreshAfterUpload();
         }}
