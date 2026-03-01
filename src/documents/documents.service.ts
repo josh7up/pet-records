@@ -193,8 +193,26 @@ export class DocumentsService {
       throw new NotFoundException('Document not found');
     }
 
-    await this.prisma.document.delete({
-      where: { id },
+    await this.prisma.$transaction(async (tx) => {
+      const visitIds = (
+        await tx.visit.findMany({
+          where: { documentId: id },
+          select: { id: true },
+        })
+      ).map((visit) => visit.id);
+
+      if (visitIds.length) {
+        await tx.weightMeasurement.deleteMany({
+          where: { visitId: { in: visitIds } },
+        });
+        await tx.reminder.deleteMany({
+          where: { visitId: { in: visitIds } },
+        });
+      }
+
+      await tx.document.delete({
+        where: { id },
+      });
     });
 
     await unlink(document.filePath).catch(() => undefined);
