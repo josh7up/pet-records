@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PetSpecies {
+  DOG
+  CAT
+  BIRD
+  RABBIT
+  REPTILE
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  OCR_IN_PROGRESS
+  OCR_COMPLETE
+  PARSE_COMPLETE
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum PetCandidateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships HouseholdMember[]
+}
+
+model Household {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members   HouseholdMember[]
+  pets      Pet[]
+  documents Document[]
+}
+
+model HouseholdMember {
+  id          String   @id @default(cuid())
+  householdId String
+  userId      String
+  role        String
+  createdAt   DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, userId])
+}
+
+model Pet {
+  id           String     @id @default(cuid())
+  householdId  String
+  name         String
+  species      PetSpecies
+  breed        String?
+  sex          String?
+  dateOfBirth  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  household         Household            @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  documents         Document[]
+  visits            Visit[]
+  weights           WeightMeasurement[]
+  reminders         Reminder[]
+
+  @@index([householdId, name])
+  @@index([species])
+}
+
+model Clinic {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents Document[]
+  visits    Visit[]
+
+  @@index([name])
+}
+
+model Document {
+  id             String         @id @default(cuid())
+  householdId    String
+  petId          String?
+  clinicId       String?
+  originalName   String
+  filePath       String
+  mimeType       String
+  visitDate      DateTime?
+  ocrStatus      DocumentStatus @default(UPLOADED)
+  uploadedAt     DateTime       @default(now())
+  processedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  pet            Pet?            @relation(fields: [petId], references: [id], onDelete: SetNull)
+  clinic         Clinic?         @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  pages          OcrPage[]
+  visits         Visit[]
+  extractedFields ExtractedField[]
+  petCandidates  DocumentPetCandidate[]
+
+  @@index([householdId, uploadedAt])
+  @@index([petId])
+  @@index([visitDate])
+  @@index([ocrStatus])
+}
+
+model OcrPage {
+  id         String   @id @default(cuid())
+  documentId String
+  pageNumber Int
+  fullText   String
+  rawOcrJson Json
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, pageNumber])
+}
+
+model Visit {
+  id            String    @id @default(cuid())
+  documentId    String
+  petId         String
+  clinicId      String?
+  visitDate     DateTime
+  printedAt     DateTime?
+  invoiceNumber String?
+  accountNumber String?
+  totalCharges  Decimal?  @db.Decimal(10, 2)
+  totalPayments Decimal?  @db.Decimal(10, 2)
+  balance       Decimal?  @db.Decimal(10, 2)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  document   Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pet        Pet              @relation(fields: [petId], references: [id], onDelete: Cascade)
+  clinic     Clinic?          @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  lineItems  VisitLineItem[]
+  reminders  Reminder[]
+  weights    WeightMeasurement[]
+
+  @@index([petId, visitDate])
+  @@index([documentId])
+  @@index([invoiceNumber])
+  @@unique([documentId, petId])
+}
+
+model VisitLineItem {
+  id          String    @id @default(cuid())
+  visitId     String
+  serviceDate DateTime?
+  description String
+  quantity    Decimal?  @db.Decimal(10, 2)
+  unitPrice   Decimal?  @db.Decimal(10, 2)
+  discount    Decimal?  @db.Decimal(10, 2)
+  totalPrice  Decimal?  @db.Decimal(10, 2)
+  createdAt   DateTime  @default(now())
+
+  visit Visit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  @@index([description])
+}
+
+model WeightMeasurement {
+  id          String    @id @default(cuid())
+  petId       String
+  visitId     String?
+  measuredAt  DateTime
+  weightValue Decimal   @db.Decimal(8, 2)
+  weightUnit  String
+  source      String?
+  createdAt   DateTime  @default(now())
+
+  pet   Pet   @relation(fields: [petId], references: [id], onDelete: Cascade)
+  visit Visit? @relation(fields: [visitId], references: [id], onDelete: SetNull)
+
+  @@index([petId, measuredAt])
+}
+
+model Reminder {
+  id            String   @id @default(cuid())
+  petId          String
+  visitId        String?
+  serviceName    String
+  dueDate        DateTime?
+  lastDoneDate   DateTime?
+  createdAt      DateTime @default(now())
+
+  pet   Pet   @relation(fields: [petId], references: [id], onDelete: Cascade)
+  visit Visit? @relation(fields: [visitId], references: [id], onDelete: SetNull)
+
+  @@index([petId, dueDate])
+  @@index([serviceName])
+}
+
+model ExtractedField {
+  id         String   @id @default(cuid())
+  documentId String
+  fieldName  String
+  fieldValue String
+  confidence Float?
+  sourcePage Int?
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, fieldName])
+}
+
+model DocumentPetCandidate {
+  id             String             @id @default(cuid())
+  documentId     String
+  detectedName   String
+  normalizedName String
+  confidence     Float?
+  status         PetCandidateStatus @default(PENDING)
+  matchedPetId   String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, status])
+  @@index([normalizedName])
+}
