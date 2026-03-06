@@ -132,6 +132,36 @@ button {
   padding-left: 1.2rem;
 }
 
+.parsed-grid p {
+  margin: 0.25rem 0;
+}
+
+.parsed-grid {
+  border: 1px solid #d8e8ef;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.6rem;
+  background: #f8fbfd;
+}
+
+.pet-section h4 {
+  margin: 0.6rem 0 0.35rem;
+}
+
+.parsed-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 0.5rem;
+}
+
+.parsed-table th,
+.parsed-table td {
+  border: 1px solid #d8e8ef;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
 .ocr-text {
   background: #f8fbfd;
   border: 1px solid #d8e8ef;
@@ -154,6 +184,18 @@ button {
 
 .empty {
   color: #4f6474;
+}
+
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  background: #0f5132;
+  color: #ffffff;
+  padding: 0.7rem 0.95rem;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
+  z-index: 50;
 }
 
 @media (max-width: 900px) {

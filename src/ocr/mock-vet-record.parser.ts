@@ -72,11 +72,59 @@ function maybePetName(value: string): boolean {
   return /^[A-Za-z][A-Za-z' -]{0,30}$/.test(value.trim());
 }
 
+function isNonPetToken(value: string): boolean {
+  return /^(date|for|qty|description|price|discount|invoice|account|printed|charges|payments|balance|old|new|visa|payment|total)$/i.test(
+    value.trim(),
+  );
+}
+
+function isNumericSummaryText(value: string): boolean {
+  const trimmed = value.trim();
+  return /^-?\d+\.\d{2}(?:\s+-?\d+\.\d{2})+$/.test(trimmed);
+}
+
+function isLikelyServiceDescription(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (isNumericSummaryText(trimmed)) {
+    return false;
+  }
+  return /[A-Za-z]/.test(trimmed);
+}
+
 export function parseVetRecordText(rawText: string): ParsedVetRecord {
   const lines = rawText
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+
+  const parsePaymentsFromBalanceSummary = () => {
+    const headerIndex = lines.findIndex((line) =>
+      /old\s+balance\s+charges\s+payments\s+new\s+balance/i.test(line),
+    );
+    if (headerIndex < 0) {
+      return undefined;
+    }
+
+    for (let index = headerIndex + 1; index < Math.min(lines.length, headerIndex + 8); index += 1) {
+      const line = lines[index];
+      if (/^patient\b|^reminders?\s+for:/i.test(line)) {
+        break;
+      }
+      const amounts = line.match(/-?\d+\.\d{2}/g);
+      if (!amounts || amounts.length < 4) {
+        continue;
+      }
+      const parsed = Number(amounts[2]);
+      if (Number.isFinite(parsed)) {
+        return Math.abs(parsed);
+      }
+    }
+
+    return undefined;
+  };
 
   const clinicName = lines.find((line) => line.toLowerCase().includes('veterinary'));
   const clinicPhone = lines.find((line) => /\(\d{3}\)\s*\d{3}-\d{4}/.test(line));
@@ -93,6 +141,7 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
   const chargesMatch = lines.find((line) => /^Charges\s+/i.test(line));
   const paymentsMatch = lines.find((line) => /^Payments\s+/i.test(line));
   const balanceMatch = lines.find((line) => /^New balance\s+/i.test(line));
+  const paymentsFromBalanceSummary = parsePaymentsFromBalanceSummary();
 
   const sections = new Map<string, ParsedPetSection>();
   const knownPetNames = new Set<string>();
@@ -112,7 +161,16 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
   let activePet: string | undefined;
   let paymentAmount = 0;
 
+  let insidePatientBlock = false;
   for (const line of lines) {
+    if (/^Patient\b/i.test(line)) {
+      insidePatientBlock = true;
+      continue;
+    }
+    if (insidePatientBlock && /^Reminders\s+for:/i.test(line)) {
+      insidePatientBlock = false;
+    }
+
     const dateWithPetOnly = line.match(/^(\d{2}-\d{2}-\d{2})\s+([A-Za-z][A-Za-z' -]{0,30})$/);
     if (dateWithPetOnly) {
       knownPetNames.add(normalizePetName(dateWithPetOnly[2]));
@@ -123,16 +181,27 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
     if (reminderHeader) {
       knownPetNames.add(normalizePetName(reminderHeader[1]));
     }
-    const totalLine = line.match(/^([A-Za-z][A-Za-z' -]{0,30})\s+(-?\d+\.\d{2})$/);
-    if (
-      totalLine &&
-      !/^(Old balance|Charges|Payments|New balance|Total charges)$/i.test(totalLine[1])
-    ) {
-      knownPetNames.add(normalizePetName(totalLine[1]));
+    if (insidePatientBlock) {
+      const patientTotalLine = line.match(/^([A-Za-z][A-Za-z' -]{0,30})\s+(-?\d+\.\d{2})$/);
+      if (
+        patientTotalLine &&
+        !/^(Old balance|Charges|Payments|New balance|Total charges)$/i.test(patientTotalLine[1])
+      ) {
+        knownPetNames.add(normalizePetName(patientTotalLine[1]));
+      }
     }
   }
 
+  let insidePatientTotals = false;
   for (const line of lines) {
+    if (/^Patient\b/i.test(line)) {
+      insidePatientTotals = true;
+      continue;
+    }
+    if (insidePatientTotals && /^Reminders\s+for:/i.test(line)) {
+      insidePatientTotals = false;
+    }
+
     const dateWithPetOnly = line.match(/^(\d{2}-\d{2}-\d{2})\s+([A-Za-z][A-Za-z' -]{0,30})$/);
     if (dateWithPetOnly) {
       activePet = normalizePetName(dateWithPetOnly[2]);
@@ -140,31 +209,39 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
       continue;
     }
 
-    const datedLineItem = line.match(
-      /^(\d{2}-\d{2}-\d{2})(?:\s+([A-Za-z][A-Za-z' -]{0,30}))?\s+(.+?)\s+(-?\d+\.\d{2})$/,
-    );
+    const datedLineItem = line.match(/^(\d{2}-\d{2}-\d{2})\s+(.+?)\s+(-?\d+\.\d{2})$/);
     if (datedLineItem) {
-      const [, serviceDateText, maybeName, description, amountText] = datedLineItem;
+      const [, serviceDateText, bodyText, amountText] = datedLineItem;
       const serviceDate = parseTwoDigitYearDate(serviceDateText);
       const amount = parseAmount(amountText);
 
-      if (/payment/i.test(description)) {
+      const isPaymentRow = /payment/i.test(bodyText);
+      if (isPaymentRow) {
         paymentAmount += Math.abs(amount || 0);
         continue;
       }
 
-      let descriptionValue = description;
+      let descriptionValue = bodyText;
       let derivedPet = activePet;
-      if (maybeName && maybePetName(maybeName)) {
-        const normalizedCandidate = normalizePetName(maybeName);
-        if (knownPetNames.has(normalizedCandidate)) {
-          derivedPet = normalizedCandidate;
-        } else if (activePet) {
-          descriptionValue = `${normalizedCandidate} ${description}`;
-        }
+
+      const matchingKnownName = Array.from(knownPetNames).find((petName) =>
+        new RegExp(`^${petName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s+|$)`, 'i').test(
+          bodyText,
+        ),
+      );
+      if (matchingKnownName) {
+        derivedPet = matchingKnownName;
+        activePet = matchingKnownName;
+        ensureSection(matchingKnownName);
+        descriptionValue = bodyText
+          .replace(new RegExp(`^${matchingKnownName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i'), '')
+          .trim();
+      }
+      if (!derivedPet && knownPetNames.size === 1) {
+        derivedPet = Array.from(knownPetNames)[0];
       }
 
-      if (derivedPet) {
+      if (derivedPet && isLikelyServiceDescription(descriptionValue)) {
         const section = ensureSection(derivedPet);
         section.lineItems.push({
           serviceDate,
@@ -177,6 +254,7 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
 
     const looseLineItemMatch = line.match(/^(.+?)\s+(-?\d+\.\d{2})$/);
     if (
+      !insidePatientTotals &&
       looseLineItemMatch &&
       !/^Old balance|^Charges|^Payments|^New balance|^Total charges|^Printed:|^Date:|^Account:|^Invoice:/i.test(line)
     ) {
@@ -187,7 +265,7 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
         continue;
       }
 
-      if (activePet) {
+      if (activePet && isLikelyServiceDescription(description)) {
         const section = ensureSection(activePet);
         section.lineItems.push({
           description,
@@ -197,7 +275,7 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
     }
   }
 
-  const patientIndex = lines.findIndex((line) => /^Patient$/i.test(line));
+  const patientIndex = lines.findIndex((line) => /^Patient\b/i.test(line));
   if (patientIndex >= 0) {
     for (let index = patientIndex + 1; index < lines.length; index += 1) {
       const line = lines[index];
@@ -250,6 +328,15 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
     }
   }
 
+  for (const section of sections.values()) {
+    if (section.totalCharges === undefined) {
+      section.totalCharges = section.lineItems.reduce(
+        (sum, item) => sum + (item.totalPrice || 0),
+        0,
+      );
+    }
+  }
+
   const petSections = Array.from(sections.values());
   const allLineItems = petSections.flatMap((section) => section.lineItems);
   const allReminders = petSections.flatMap((section) => section.reminders);
@@ -265,7 +352,14 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
     invoiceNumber: invoiceLine?.replace(/^Invoice:\s*/i, '').trim(),
     petName: firstSection?.petName,
     totalCharges: firstSection?.totalCharges,
-    totalPayments: paymentsMatch ? parseAmount(paymentsMatch) : paymentAmount || undefined,
+    totalPayments: (() => {
+      const fromSummary = paymentsFromBalanceSummary;
+      const fromPaymentsLine = paymentsMatch
+        ? Math.abs(parseAmount(paymentsMatch) || 0) || undefined
+        : undefined;
+      const fromPaymentRows = paymentAmount || undefined;
+      return fromSummary ?? fromPaymentsLine ?? fromPaymentRows;
+    })(),
     balance: balanceMatch ? parseAmount(balanceMatch) : undefined,
     weightValue: firstSection?.weightValue,
     weightUnit: firstSection?.weightUnit,

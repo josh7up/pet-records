@@ -31,6 +31,7 @@ export function App() {
   >([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [toast, setToast] = useState('');
 
   const selectedPet = useMemo(
     () => pets.find((pet) => pet.id === selectedPetId),
@@ -111,6 +112,13 @@ export function App() {
     }
   }
 
+  function showToast(message: string) {
+    setToast(message);
+    setTimeout(() => {
+      setToast('');
+    }, 2500);
+  }
+
   return (
     <main className="layout">
       <header>
@@ -165,9 +173,11 @@ export function App() {
           setSelectedVisit(undefined);
           setVisits((prev) => prev.filter((visit) => visit.document.id !== deletedDocumentId));
           void refreshAfterUpload();
+          showToast('Record deleted.');
         }}
       />
       <WeightChartPanel pet={selectedPet} points={weightPoints} />
+      {toast ? <div className="toast">{toast}</div> : null}
     </main>
   );
 }

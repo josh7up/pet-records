@@ -34,6 +34,13 @@ export interface VisitLineItem {
   serviceDate?: string | null;
 }
 
+export interface Reminder {
+  id: string;
+  serviceName: string;
+  dueDate?: string | null;
+  lastDoneDate?: string | null;
+}
+
 export interface WeightPoint {
   id: string;
   measuredAt: string;
@@ -51,6 +58,7 @@ export interface DocumentRecord {
   pages: OcrPage[];
   extractedFields: ExtractedField[];
   petCandidates: PetCandidate[];
+  visits?: DocumentVisitRecord[];
 }
 
 export interface PetCandidate {
@@ -66,9 +74,22 @@ export interface SearchVisit {
   visitDate: string;
   invoiceNumber?: string | null;
   totalCharges?: string | number | null;
+  totalPayments?: string | number | null;
   pet: Pet;
   lineItems: VisitLineItem[];
+  reminders: Reminder[];
   document: DocumentRecord;
+}
+
+export interface DocumentVisitRecord {
+  id: string;
+  visitDate: string;
+  invoiceNumber?: string | null;
+  totalCharges?: string | number | null;
+  totalPayments?: string | number | null;
+  pet: Pet;
+  lineItems: VisitLineItem[];
+  reminders: Reminder[];
 }
 
 export interface Paginated<T> {

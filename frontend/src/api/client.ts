@@ -78,6 +78,7 @@ export const api = {
     request<Paginated<SearchVisit>>(`/records/search${query ? `?${query}` : ''}`),
   documents: (query = '') =>
     request<Paginated<DocumentRecord>>(`/documents${query ? `?${query}` : ''}`),
+  document: (documentId: string) => request<DocumentRecord>(`/documents/${documentId}`),
   weightSeries: (petId: string) =>
     request<{ petId: string; points: WeightPoint[]; stats: { count: number } }>(
       `/weights/pets/${petId}`,
