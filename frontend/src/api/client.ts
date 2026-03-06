@@ -1,6 +1,5 @@
 import type {
   DocumentRecord,
-  Household,
   Paginated,
   Pet,
   SearchVisit,
@@ -72,7 +71,6 @@ async function del(path: string) {
 
 export const api = {
   baseUrl: API_BASE,
-  households: () => request<Household[]>('/households'),
   pets: (query = '') => request<Paginated<Pet>>(`/pets${query ? `?${query}` : ''}`),
   searchVisits: (query = '') =>
     request<Paginated<SearchVisit>>(`/records/search${query ? `?${query}` : ''}`),
@@ -86,7 +84,6 @@ export const api = {
   uploadDocument: (file: File, payload: UploadRecordPayload) => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('householdId', payload.householdId);
     if (payload.petId) formData.append('petId', payload.petId);
     if (payload.clinicId) formData.append('clinicId', payload.clinicId);
     if (payload.visitDate) formData.append('visitDate', payload.visitDate);
@@ -95,7 +92,6 @@ export const api = {
   uploadDocumentImages: (files: File[], payload: UploadRecordPayload) => {
     const formData = new FormData();
     files.forEach((file) => formData.append('files', file));
-    formData.append('householdId', payload.householdId);
     if (payload.petId) formData.append('petId', payload.petId);
     if (payload.clinicId) formData.append('clinicId', payload.clinicId);
     if (payload.visitDate) formData.append('visitDate', payload.visitDate);

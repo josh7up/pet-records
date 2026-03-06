@@ -29,7 +29,7 @@ cp .env.example .env
 npm run prisma:migrate
 ```
 
-4. Seed with a realistic sample household/pet/document/visit/OCR/reminders/weight:
+4. Seed with a clean default dataset:
 
 ```bash
 npm run prisma:seed
@@ -50,7 +50,7 @@ OCR runs through Google AI Studio:
 - Set `GOOGLE_AI_STUDIO_API_KEY` in `.env`
 - Images and PDFs are sent directly to Gemini for text extraction
 - Default model is `gemini-2.0-flash` with automatic fallback models
-- Uploads are blocked when a duplicate invoice number is detected for the same household
+- Uploads are blocked when a duplicate invoice number is detected
 
 To enable verbose OCR debug logs in backend console:
 
@@ -97,8 +97,6 @@ Frontend URL: `http://localhost:5173`
 
 ## Implemented backend endpoints
 
-- `POST /api/households`
-- `GET /api/households`
 - `POST /api/pets`
 - `GET /api/pets`
 - `GET /api/pets/:id`
@@ -135,9 +133,7 @@ Single PDF or image:
 
 ```bash
 curl -X POST "http://localhost:3000/api/documents/upload" \
-  -F "file=@/absolute/path/to/record.pdf" \
-  -F "householdId=<household-id>" \
-  -F "petId=<pet-id>"
+  -F "file=@/absolute/path/to/record.pdf"
 ```
 
 Multiple page images as one record (combined server-side into a PDF):
@@ -145,7 +141,5 @@ Multiple page images as one record (combined server-side into a PDF):
 ```bash
 curl -X POST "http://localhost:3000/api/documents/upload-images" \
   -F "files=@/absolute/path/to/page-1.jpg" \
-  -F "files=@/absolute/path/to/page-2.jpg" \
-  -F "householdId=<household-id>" \
-  -F "petId=<pet-id>"
+  -F "files=@/absolute/path/to/page-2.jpg"
 ```

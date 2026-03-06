@@ -4,10 +4,6 @@ import { PaginationQueryDto } from '../../common/pagination/pagination-query.dto
 
 export class ListPetsDto extends PaginationQueryDto {
   @IsOptional()
-  @IsString()
-  householdId?: string;
-
-  @IsOptional()
   @IsEnum(PetSpecies)
   species?: PetSpecies;
 

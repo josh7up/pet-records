@@ -7,7 +7,7 @@ import { SearchFilters, type SearchFilterState } from './components/SearchFilter
 import { SearchResults } from './components/SearchResults';
 import { UploadRecordPanel } from './components/UploadRecordPanel';
 import { WeightChartPanel } from './components/WeightChartPanel';
-import type { Household, Pet, SearchVisit, WeightPoint } from './types/api';
+import type { Pet, SearchVisit, WeightPoint } from './types/api';
 
 type PageId = 'upload' | 'search' | 'weight';
 
@@ -23,7 +23,6 @@ function toQueryString(filters: SearchFilterState) {
 }
 
 export function App() {
-  const [households, setHouseholds] = useState<Household[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState('');
   const [visits, setVisits] = useState<SearchVisit[]>([]);
@@ -44,11 +43,7 @@ export function App() {
 
   async function loadBaseData() {
     try {
-      const [householdRows, petRows] = await Promise.all([
-        api.households(),
-        api.pets('pageSize=100'),
-      ]);
-      setHouseholds(householdRows);
+      const petRows = await api.pets('pageSize=100');
       setPets(petRows.data);
     } catch (loadError) {
       setError((loadError as Error).message);
@@ -127,9 +122,7 @@ export function App() {
     <main className="layout">
       <header>
         <h1>Pet Record Management</h1>
-        <p>
-          Households: {households.length} | Pets: {pets.length}
-        </p>
+        <p>Pets: {pets.length}</p>
       </header>
 
       <section className="page-tabs">
@@ -162,7 +155,6 @@ export function App() {
       {page === 'upload' ? (
         <>
           <UploadRecordPanel
-            households={households}
             onUploaded={() => {
               void refreshAfterUpload();
             }}

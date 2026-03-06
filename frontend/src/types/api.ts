@@ -1,10 +1,5 @@
 export type PetSpecies = 'DOG' | 'CAT' | 'BIRD' | 'RABBIT' | 'REPTILE' | 'OTHER';
 
-export interface Household {
-  id: string;
-  name: string;
-}
-
 export interface Pet {
   id: string;
   householdId: string;
@@ -100,7 +95,6 @@ export interface Paginated<T> {
 }
 
 export interface UploadRecordPayload {
-  householdId: string;
   petId?: string;
   clinicId?: string;
   visitDate?: string;

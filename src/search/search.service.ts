@@ -28,7 +28,6 @@ export class SearchService {
             }
           : undefined,
       pet: {
-        householdId: query.householdId,
         name: query.petName
           ? { contains: query.petName, mode: 'insensitive' }
           : undefined,

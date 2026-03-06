@@ -344,13 +344,32 @@ export class OcrService {
     return undefined;
   }
 
+  private async resolveHouseholdId(householdId?: string) {
+    if (householdId) {
+      return householdId;
+    }
+    const existing = await this.prisma.household.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (existing) {
+      return existing.id;
+    }
+    const created = await this.prisma.household.create({
+      data: { name: 'Default Household' },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   async assertNoDuplicateInvoiceForUpload(
     dto: Pick<UploadDocumentDto, 'householdId'>,
     files: Express.Multer.File[],
   ) {
+    const householdId = await this.resolveHouseholdId(dto.householdId);
     const invoiceCandidates = await this.collectInvoiceCandidatesForUpload(files);
     const duplicate = await this.findDuplicateInvoiceForHousehold(
-      dto.householdId,
+      householdId,
       invoiceCandidates,
     );
     if (duplicate) {

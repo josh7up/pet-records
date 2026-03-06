@@ -13,14 +13,35 @@ import { safeFilename } from './utils/multer-upload';
 export class DocumentsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async resolveHouseholdId(householdId?: string) {
+    if (householdId) {
+      return householdId;
+    }
+
+    const existing = await this.prisma.household.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (existing) {
+      return existing.id;
+    }
+
+    const created = await this.prisma.household.create({
+      data: { name: 'Default Household' },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   async create(dto: UploadDocumentDto, file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('File upload missing');
     }
 
+    const householdId = await this.resolveHouseholdId(dto.householdId);
     const document = await this.prisma.document.create({
       data: {
-        householdId: dto.householdId,
+        householdId,
         petId: dto.petId,
         clinicId: dto.clinicId,
         visitDate: dto.visitDate ? new Date(dto.visitDate) : null,
@@ -72,9 +93,10 @@ export class DocumentsService {
     const pdfBytes = await pdf.save();
     await writeFile(outputPath, pdfBytes);
 
+    const householdId = await this.resolveHouseholdId(dto.householdId);
     const document = await this.prisma.document.create({
       data: {
-        householdId: dto.householdId,
+        householdId,
         petId: dto.petId,
         clinicId: dto.clinicId,
         visitDate: dto.visitDate ? new Date(dto.visitDate) : null,
@@ -90,7 +112,6 @@ export class DocumentsService {
 
   async findAll(query: ListDocumentsDto) {
     const where: Prisma.DocumentWhereInput = {
-      householdId: query.householdId,
       petId: query.petId,
       ocrStatus: query.status,
       visitDate:

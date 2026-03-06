@@ -8,10 +8,27 @@ import { ListPetsDto } from './dto/list-pets.dto';
 export class PetsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async resolveHouseholdId() {
+    const existing = await this.prisma.household.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (existing) {
+      return existing.id;
+    }
+    const created = await this.prisma.household.create({
+      data: { name: 'Default Household' },
+      select: { id: true },
+    });
+    return created.id;
+  }
+
   async create(dto: CreatePetDto) {
+    const householdId = await this.resolveHouseholdId();
     return this.prisma.pet.create({
       data: {
         ...dto,
+        householdId,
         dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
       },
     });
@@ -19,7 +36,6 @@ export class PetsService {
 
   async findAll(query: ListPetsDto) {
     const where: Prisma.PetWhereInput = {
-      householdId: query.householdId,
       species: query.species,
       name: query.q ? { contains: query.q, mode: 'insensitive' } : undefined,
     };

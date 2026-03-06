@@ -5,10 +5,6 @@ import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } fro
 export class CreatePetDto {
   @IsString()
   @IsNotEmpty()
-  householdId!: string;
-
-  @IsString()
-  @IsNotEmpty()
   @MaxLength(120)
   name!: string;
 

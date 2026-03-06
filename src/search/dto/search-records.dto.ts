@@ -5,10 +5,6 @@ import { PaginationQueryDto } from '../../common/pagination/pagination-query.dto
 export class SearchRecordsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
-  householdId?: string;
-
-  @IsOptional()
-  @IsString()
   petId?: string;
 
   @IsOptional()

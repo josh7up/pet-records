@@ -1,17 +1,14 @@
 import { FormEvent, useState } from 'react';
 import { api } from '../api/client';
-import type { Household } from '../types/api';
 
 type UploadMode = 'single' | 'images';
 
 interface UploadRecordPanelProps {
-  households: Household[];
   onUploaded: () => void;
 }
 
-export function UploadRecordPanel({ households, onUploaded }: UploadRecordPanelProps) {
+export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
   const [mode, setMode] = useState<UploadMode>('single');
-  const [householdId, setHouseholdId] = useState('');
   const [singleFile, setSingleFile] = useState<File | null>(null);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [status, setStatus] = useState('');
@@ -21,16 +18,9 @@ export function UploadRecordPanel({ households, onUploaded }: UploadRecordPanelP
     event.preventDefault();
     setStatus('');
 
-    if (!householdId) {
-      setStatus('Choose a household first.');
-      return;
-    }
-
     try {
       setSubmitting(true);
-      const payload = {
-        householdId,
-      };
+      const payload = {};
 
       if (mode === 'single') {
         if (!singleFile) {
@@ -79,23 +69,6 @@ export function UploadRecordPanel({ households, onUploaded }: UploadRecordPanelP
           <select value={mode} onChange={(event) => setMode(event.target.value as UploadMode)}>
             <option value="single">Single PDF/image</option>
             <option value="images">Multiple images as one record</option>
-          </select>
-        </label>
-
-        <label className="field">
-          Household
-          <select
-            value={householdId}
-            onChange={(event) => {
-              setHouseholdId(event.target.value);
-            }}
-          >
-            <option value="">Select household</option>
-            {households.map((household) => (
-              <option key={household.id} value={household.id}>
-                {household.name}
-              </option>
-            ))}
           </select>
         </label>
 

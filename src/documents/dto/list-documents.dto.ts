@@ -5,10 +5,6 @@ import { DocumentStatus } from '@prisma/client';
 export class ListDocumentsDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
-  householdId?: string;
-
-  @IsOptional()
-  @IsString()
   petId?: string;
 
   @IsOptional()

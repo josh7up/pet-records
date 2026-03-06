@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api/client';
 import type { DocumentRecord, Pet } from '../types/api';
 
@@ -20,16 +20,6 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
   const [state, setState] = useState<Record<string, CandidateDecisionState>>({});
   const [busyDocId, setBusyDocId] = useState('');
   const [message, setMessage] = useState('');
-
-  const petsByHousehold = useMemo(() => {
-    const map = new Map<string, Pet[]>();
-    for (const pet of pets) {
-      const list = map.get(pet.householdId) || [];
-      list.push(pet);
-      map.set(pet.householdId, list);
-    }
-    return map;
-  }, [pets]);
 
   function decisionKey(documentId: string, candidateId: string) {
     return `${documentId}:${candidateId}`;
@@ -77,7 +67,6 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
       <h2>Pet review required</h2>
       {!documents.length ? <p className="empty">No documents waiting for pet review.</p> : null}
       {documents.map((document) => {
-        const householdPets = petsByHousehold.get(document.householdId || '') || [];
         const pendingCandidates = document.petCandidates.filter(
           (candidate) => candidate.status === 'PENDING',
         );
@@ -128,7 +117,7 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
                       }}
                     >
                       <option value="">Select pet</option>
-                      {householdPets.map((pet) => (
+                      {pets.map((pet) => (
                         <option key={pet.id} value={pet.id}>
                           {pet.name} ({pet.species})
                         </option>
