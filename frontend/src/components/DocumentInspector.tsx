@@ -156,7 +156,7 @@ export function DocumentInspector({ visit, onDeleted }: DocumentInspectorProps) 
 
   return (
     <section className="panel two-col">
-      <div>
+      <div className="inspector-pane">
         <div className="inspector-head">
           <h2>Scanned document</h2>
           <button className="danger" type="button" onClick={() => void handleDelete()} disabled={deleting}>
@@ -165,7 +165,7 @@ export function DocumentInspector({ visit, onDeleted }: DocumentInspectorProps) 
         </div>
         <iframe src={fileUrl} title="Scanned pet record" className="pdf-frame" />
       </div>
-      <div>
+      <div className="inspector-pane inspector-details">
         <h2>OCR + parsed fields</h2>
         {loadingDetails ? <p>Loading parsed fields...</p> : null}
         <div className="parsed-grid">
