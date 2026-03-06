@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
 import { DocumentInspector } from './components/DocumentInspector';
+import { PetSelector } from './components/PetSelector';
 import { ReviewCandidatesPanel } from './components/ReviewCandidatesPanel';
 import { SearchFilters, type SearchFilterState } from './components/SearchFilters';
 import { SearchResults } from './components/SearchResults';
 import { UploadRecordPanel } from './components/UploadRecordPanel';
 import { WeightChartPanel } from './components/WeightChartPanel';
 import type { Household, Pet, SearchVisit, WeightPoint } from './types/api';
+
+type PageId = 'upload' | 'search' | 'weight';
 
 function toQueryString(filters: SearchFilterState) {
   const params = new URLSearchParams();
@@ -32,6 +35,7 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [toast, setToast] = useState('');
+  const [page, setPage] = useState<PageId>('upload');
 
   const selectedPet = useMemo(
     () => pets.find((pet) => pet.id === selectedPetId),
@@ -128,55 +132,101 @@ export function App() {
         </p>
       </header>
 
-      <UploadRecordPanel
-        households={households}
-        onUploaded={() => {
-          void refreshAfterUpload();
-        }}
-      />
-
-      <ReviewCandidatesPanel
-        documents={reviewDocuments}
-        pets={pets}
-        onChanged={() => {
-          void refreshAfterUpload();
-        }}
-      />
-
-      <section className="panel">
-        <h2>Search records</h2>
-        <SearchFilters
-          pets={pets}
-          initialState={{ petId: selectedPetId }}
-          onApply={applySearch}
-        />
+      <section className="page-tabs">
+        <button
+          type="button"
+          className={`tab-btn ${page === 'upload' ? 'active' : ''}`}
+          onClick={() => setPage('upload')}
+        >
+          Upload record
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${page === 'search' ? 'active' : ''}`}
+          onClick={() => setPage('search')}
+        >
+          Search records
+        </button>
+        <button
+          type="button"
+          className={`tab-btn ${page === 'weight' ? 'active' : ''}`}
+          onClick={() => setPage('weight')}
+        >
+          Weight trend
+        </button>
       </section>
 
       {error ? <p className="error">{error}</p> : null}
       {loading ? <p>Loading...</p> : null}
 
-      <section className="panel">
-        <h2>Results</h2>
-        <SearchResults
-          visits={visits}
-          selectedVisitId={selectedVisit?.id}
-          onSelect={(visit) => {
-            setSelectedVisit(visit);
-            setSelectedPetId(visit.pet.id);
-          }}
-        />
-      </section>
+      {page === 'upload' ? (
+        <>
+          <UploadRecordPanel
+            households={households}
+            onUploaded={() => {
+              void refreshAfterUpload();
+            }}
+          />
 
-      <DocumentInspector
-        visit={selectedVisit}
-        onDeleted={(deletedDocumentId) => {
-          setSelectedVisit(undefined);
-          setVisits((prev) => prev.filter((visit) => visit.document.id !== deletedDocumentId));
-          void refreshAfterUpload();
-          showToast('Record deleted.');
-        }}
-      />
-      <WeightChartPanel pet={selectedPet} points={weightPoints} />
+          <ReviewCandidatesPanel
+            documents={reviewDocuments}
+            pets={pets}
+            onChanged={() => {
+              void refreshAfterUpload();
+            }}
+          />
+        </>
+      ) : null}
+
+      {page === 'search' ? (
+        <>
+          <section className="panel">
+            <h2>Search records</h2>
+            <SearchFilters
+              pets={pets}
+              initialState={{ petId: selectedPetId }}
+              onApply={applySearch}
+            />
+          </section>
+
+          <section className="panel">
+            <h2>Results</h2>
+            <SearchResults
+              visits={visits}
+              selectedVisitId={selectedVisit?.id}
+              onSelect={(visit) => {
+                setSelectedVisit(visit);
+                setSelectedPetId(visit.pet.id);
+              }}
+            />
+          </section>
+
+          <DocumentInspector
+            visit={selectedVisit}
+            onDeleted={(deletedDocumentId) => {
+              setSelectedVisit(undefined);
+              setVisits((prev) => prev.filter((visit) => visit.document.id !== deletedDocumentId));
+              void refreshAfterUpload();
+              showToast('Record deleted.');
+            }}
+          />
+        </>
+      ) : null}
+
+      {page === 'weight' ? (
+        <>
+          <section className="panel">
+            <h2>Weight trend</h2>
+            <PetSelector
+              pets={pets}
+              selectedPetId={selectedPetId}
+              onChange={(petId) => setSelectedPetId(petId)}
+            />
+          </section>
+          <WeightChartPanel pet={selectedPet} points={weightPoints} />
+        </>
+      ) : null}
+
       {toast ? <div className="toast">{toast}</div> : null}
     </main>
   );

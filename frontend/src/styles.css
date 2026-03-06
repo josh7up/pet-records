@@ -18,6 +18,26 @@ body {
   padding: 1.25rem;
 }
 
+.page-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  background: #e7f1f6;
+  color: #17465d;
+  border: 1px solid #c3dbe7;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #02577a;
+  color: #ffffff;
+  border-color: #02577a;
+}
+
 header h1 {
   margin-bottom: 0.25rem;
 }
