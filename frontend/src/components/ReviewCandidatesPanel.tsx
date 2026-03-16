@@ -119,7 +119,7 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
                       <option value="">Select pet</option>
                       {pets.map((pet) => (
                         <option key={pet.id} value={pet.id}>
-                          {pet.name} ({pet.species})
+                          {pet.name} {pet.species !== 'OTHER' ? ` (${pet.species})` : ''}
                         </option>
                       ))}
                     </select>
