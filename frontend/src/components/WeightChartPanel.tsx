@@ -29,7 +29,7 @@ export function WeightChartPanel({ pet, points }: WeightChartPanelProps) {
   return (
     <section className="panel">
       <h2>
-        Weight trend: {pet.name} ({pet.species})
+        Weight trend: {pet.name} {pet.species !== 'OTHER' ? ` (${pet.species})` : ''}
       </h2>
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={320}>
