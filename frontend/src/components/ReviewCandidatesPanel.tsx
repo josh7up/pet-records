@@ -19,6 +19,7 @@ interface ReviewCandidatesPanelProps {
 export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCandidatesPanelProps) {
   const [state, setState] = useState<Record<string, CandidateDecisionState>>({});
   const [busyDocId, setBusyDocId] = useState('');
+  const [busyAction, setBusyAction] = useState<'apply' | 'cancel' | ''>('');
   const [message, setMessage] = useState('');
 
   function decisionKey(documentId: string, candidateId: string) {
@@ -50,6 +51,7 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
     }
 
     setBusyDocId(document.id);
+    setBusyAction('apply');
     setMessage('');
     try {
       await api.reviewPets(document.id, { decisions });
@@ -59,6 +61,30 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
       setMessage((error as Error).message);
     } finally {
       setBusyDocId('');
+      setBusyAction('');
+    }
+  }
+
+  async function cancelDocument(document: DocumentRecord) {
+    const confirmed = window.confirm(
+      `Cancel upload for "${document.originalName}"? This will delete the document.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setBusyDocId(document.id);
+    setBusyAction('cancel');
+    setMessage('');
+    try {
+      await api.deleteDocument(document.id);
+      setMessage('Upload canceled and document removed.');
+      onChanged();
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setBusyDocId('');
+      setBusyAction('');
     }
   }
 
@@ -142,16 +168,32 @@ export function ReviewCandidatesPanel({ documents, pets, onChanged }: ReviewCand
                 </div>
               );
             })}
-            <button
-              className="primary"
-              type="button"
-              disabled={busyDocId === document.id}
-              onClick={() => {
-                void submitDocument(document);
-              }}
-            >
-              {busyDocId === document.id ? 'Applying...' : 'Apply review'}
-            </button>
+            <div className="review-actions">
+              <button
+                className="primary"
+                type="button"
+                disabled={busyDocId === document.id}
+                onClick={() => {
+                  void submitDocument(document);
+                }}
+              >
+                {busyDocId === document.id && busyAction === 'apply'
+                  ? 'Applying...'
+                  : 'Apply review'}
+              </button>
+              <button
+                className="danger"
+                type="button"
+                disabled={busyDocId === document.id}
+                onClick={() => {
+                  void cancelDocument(document);
+                }}
+              >
+                {busyDocId === document.id && busyAction === 'cancel'
+                  ? 'Canceling...'
+                  : 'Cancel upload'}
+              </button>
+            </div>
           </div>
         );
       })}

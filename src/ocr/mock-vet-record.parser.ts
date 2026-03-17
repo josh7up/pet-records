@@ -68,6 +68,16 @@ function normalizePetName(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function extractNameAmountPairs(line: string): Array<{ name: string; amountText: string }> {
+  const pairs: Array<{ name: string; amountText: string }> = [];
+  const regex = /([A-Za-z][A-Za-z' -]{0,30})\s+(-?\d+\.\d{2})/g;
+  let match: RegExpExecArray | null = null;
+  while ((match = regex.exec(line)) !== null) {
+    pairs.push({ name: match[1].trim(), amountText: match[2] });
+  }
+  return pairs;
+}
+
 function maybePetName(value: string): boolean {
   return /^[A-Za-z][A-Za-z' -]{0,30}$/.test(value.trim());
 }
@@ -179,7 +189,10 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
       /^Reminders\s+for:\s*([A-Za-z][A-Za-z' -]{0,30})\s*\(Weight:/i,
     );
     if (reminderHeader) {
-      knownPetNames.add(normalizePetName(reminderHeader[1]));
+      const candidateName = normalizePetName(reminderHeader[1]);
+      if (knownPetNames.has(candidateName)) {
+        knownPetNames.add(candidateName);
+      }
     }
     if (insidePatientBlock) {
       const patientTotalLine = line.match(/^([A-Za-z][A-Za-z' -]{0,30})\s+(-?\d+\.\d{2})$/);
@@ -188,6 +201,12 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
         !/^(Old balance|Charges|Payments|New balance|Total charges)$/i.test(patientTotalLine[1])
       ) {
         knownPetNames.add(normalizePetName(patientTotalLine[1]));
+      } else {
+        for (const pair of extractNameAmountPairs(line)) {
+          if (!/^(Old balance|Charges|Payments|New balance|Total charges)$/i.test(pair.name)) {
+            knownPetNames.add(normalizePetName(pair.name));
+          }
+        }
       }
     }
   }
@@ -288,6 +307,18 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
         const [, petName, totalText] = totalLine;
         const section = ensureSection(petName);
         section.totalCharges = parseAmount(totalText);
+        continue;
+      }
+
+      const pairs = extractNameAmountPairs(line);
+      if (pairs.length > 1) {
+        for (const pair of pairs) {
+          if (/^(Old balance|Charges|Payments|New balance|Total charges)$/i.test(pair.name)) {
+            continue;
+          }
+          const section = ensureSection(pair.name);
+          section.totalCharges = parseAmount(pair.amountText);
+        }
       }
     }
   }
@@ -302,6 +333,9 @@ export function parseVetRecordText(rawText: string): ParsedVetRecord {
 
     const [, petNameRaw, weightRaw, unitRaw] = reminderHeader;
     const petName = normalizePetName(petNameRaw);
+    if (!knownPetNames.has(petName)) {
+      continue;
+    }
     const section = ensureSection(petName);
     section.weightValue = Number(weightRaw);
     section.weightUnit = unitRaw;

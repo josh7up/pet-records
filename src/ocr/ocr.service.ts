@@ -19,7 +19,7 @@ import {
 } from '../documents/dto/review-pet-candidates.dto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MockOcrDto } from './dto/mock-ocr.dto';
-import { ParsedPetSection, parseVetRecordText } from './mock-vet-record.parser';
+import { ParsedPetSection, ParsedVetRecord, parseVetRecordText } from './mock-vet-record.parser';
 import type { UploadDocumentDto } from '../documents/dto/upload-document.dto';
 
 const dynamicImport = new Function(
@@ -145,6 +145,17 @@ function extractHighConfidencePetNamesFromRawText(rawText: string) {
       const normalized = normalizeCandidate(reminderMatch[1]);
       if (normalized) {
         bump(normalized, 6);
+      }
+    }
+  }
+
+  for (const line of lines) {
+    const pairRegex = /([A-Za-z][A-Za-z' -]{1,30})\s+(-?\d+\.\d{2})/g;
+    let match: RegExpExecArray | null = null;
+    while ((match = pairRegex.exec(line)) !== null) {
+      const normalized = normalizeCandidate(match[1]);
+      if (normalized) {
+        bump(normalized, 4);
       }
     }
   }
@@ -399,6 +410,8 @@ export class OcrService {
   private async runGoogleStudioExtract(
     paths: string[],
     mimeTypeOverrides?: string[],
+    promptOverride?: string,
+    responseMimeType?: string,
   ) {
     const apiKey = this.getGoogleAiStudioKey();
     if (!apiKey) {
@@ -422,13 +435,43 @@ export class OcrService {
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
+    const structuredPrompt =
+      'You are a veterinary record parser that converts records to JSON. ' +
+      'Output JSON data in the following format, replacing the example data with the appropriate values:\n\n' +
+      '{\n' +
+      '  "vetClinic": "[Golden Corner]",\n' +
+      '  "visitDate": "[YYYY-MM-DD]",\n' +
+      '  "accountNumber": "[12345]",\n' +
+      '  "invoiceNumber": "[123456]",\n' +
+      '  "petsExamined": [\n' +
+      '    {\n' +
+      '      "petName": "[Fluffy]",\n' +
+      '      "petAgeMonths": 48,\n' +
+      '      "petWeight": 15.1,\n' +
+      '      "services": [\n' +
+      '        {\n' +
+      '          "description": "[Rabies Recomb]",\n' +
+      '          "price": 123.50\n' +
+      '        }\n' +
+      '      ],\n' +
+      '      "totalPrice": 234.00,\n' +
+      '      "reminders": [\n' +
+      '        {\n' +
+      '          "reminderDate": "[YYYY-MM-DD]",\n' +
+      '          "lastDone": "[YYYY-MM-DD]",\n' +
+      '          "description": ""\n' +
+      '        }\n' +
+      '      ]\n' +
+      '    }\n' +
+      '  ],\n' +
+      '  "totalCharges": 335.72,\n' +
+      '  "paymentType": "[VISA]",\n' +
+      '  "paymentAmount": 335.72\n' +
+      '}\n\n' +
+      'Return only JSON. If a value is missing, use null or an empty array. Do not include commentary.';
+
     const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-      {
-        text:
-          'Extract all readable text from this veterinary receipt/document. ' +
-          'Return plain text only. Preserve line breaks, headings, table-like rows, numbers, dates, and pet names. ' +
-          'Do not summarize and do not add commentary.',
-      },
+      { text: structuredPrompt }
     ];
 
     for (let index = 0; index < paths.length; index += 1) {
@@ -458,7 +501,10 @@ export class OcrService {
       try {
         this.ocrDebug('Google AI Studio calling model', { model: modelName });
         const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(parts);
+        const result = await model.generateContent({
+          contents: [{ role: 'user', parts }],
+          generationConfig: responseMimeType ? { responseMimeType } : undefined,
+        });
         const text = result?.response?.text?.() || '';
         this.ocrDebug('Google AI Studio extract finished', {
           model: modelName,
@@ -486,6 +532,108 @@ export class OcrService {
         ' | ',
       )}`,
     );
+  }
+
+  private parseStructuredJson(text: string) {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) {
+      throw new Error('No JSON object found in structured OCR response.');
+    }
+    const sliced = text.slice(start, end + 1);
+    return JSON.parse(sliced) as {
+      vetClinic?: string;
+      visitDate?: string;
+      accountNumber?: string;
+      invoiceNumber?: string;
+      petsExamined?: Array<{
+        petName?: string;
+        petAgeMonths?: number;
+        petWeight?: number;
+        services?: Array<{ description?: string; price?: number }>;
+        totalPrice?: number;
+        reminders?: Array<{ reminderDate?: string; lastDone?: string; description?: string }>;
+      }>;
+      totalCharges?: number;
+      paymentType?: string;
+      paymentAmount?: number;
+    };
+  }
+
+  private parseIsoDate(value?: string) {
+    if (!value) return undefined;
+    const match = value.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return undefined;
+    const [, yyyy, mm, dd] = match;
+    const year = Number(yyyy);
+    const month = Number(mm);
+    const day = Number(dd);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+      return undefined;
+    }
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      return undefined;
+    }
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      return undefined;
+    }
+    return date;
+  }
+
+  private mapStructuredToParsed(structured: ReturnType<OcrService['parseStructuredJson']>): ParsedVetRecord {
+    const petSections: ParsedPetSection[] = (structured.petsExamined || [])
+      .filter((pet) => pet.petName)
+      .map((pet) => ({
+        petName: String(pet.petName || '').trim(),
+        totalCharges: typeof pet.totalPrice === 'number' ? pet.totalPrice : undefined,
+        weightValue: typeof pet.petWeight === 'number' ? pet.petWeight : undefined,
+        weightUnit: pet.petWeight ? 'lbs' : undefined,
+        lineItems: (pet.services || [])
+          .filter((service) => service.description)
+          .map((service) => ({
+            description: String(service.description || '').trim(),
+            totalPrice:
+              typeof service.price === 'number' && Number.isFinite(service.price)
+                ? service.price
+                : undefined,
+          })),
+        reminders: (pet.reminders || [])
+          .filter((reminder) => reminder.description)
+          .map((reminder) => ({
+            serviceName: String(reminder.description || '').trim(),
+            dueDate: this.parseIsoDate(reminder.reminderDate),
+            lastDoneDate: this.parseIsoDate(reminder.lastDone || undefined),
+          })),
+      }));
+
+    const allLineItems = petSections.flatMap((section) => section.lineItems);
+    const allReminders = petSections.flatMap((section) => section.reminders);
+    const firstSection = petSections[0];
+
+    return {
+      clinicName: structured.vetClinic?.trim() || undefined,
+      visitDate: this.parseIsoDate(structured.visitDate),
+      accountNumber: structured.accountNumber?.trim() || undefined,
+      invoiceNumber: structured.invoiceNumber?.trim() || undefined,
+      petName: firstSection?.petName,
+      totalCharges:
+        typeof structured.totalCharges === 'number' ? structured.totalCharges : firstSection?.totalCharges,
+      totalPayments:
+        typeof structured.paymentAmount === 'number' ? structured.paymentAmount : undefined,
+      balance: undefined,
+      weightValue: firstSection?.weightValue,
+      weightUnit: firstSection?.weightUnit,
+      lineItems: allLineItems,
+      reminders: allReminders,
+      petSections,
+      extractedFields: [],
+      printedAt: undefined,
+    };
   }
 
   async enqueueDocument(documentId: string) {
@@ -522,8 +670,13 @@ export class OcrService {
         documentId,
         imageCount: imagePaths.length,
       });
-      const combined = await this.runGoogleStudioExtract(imagePaths, mimeTypeOverrides);
-      pageTexts.push(combined);
+
+      const structuredText = await this.runGoogleStudioExtract(
+        imagePaths,
+        mimeTypeOverrides,
+        'application/json',
+      );
+      pageTexts.push(structuredText);
     } catch (error) {
       this.logger.error('OCR image processing failed', error as Error);
       await this.prisma.document.update({
@@ -547,7 +700,9 @@ export class OcrService {
       preview: combinedText.slice(0, 500),
     });
     try {
-      await this.parseAndPersist(documentId, combinedText, pageTexts);
+      const structured = this.parseStructuredJson(combinedText);
+      const parsed = this.mapStructuredToParsed(structured);
+      await this.parseAndPersist(documentId, combinedText, pageTexts, parsed);
     } catch (error) {
       this.logger.error('OCR parse/persist failed', error as Error);
       await this.prisma.document.update({
@@ -712,13 +867,14 @@ export class OcrService {
     documentId: string,
     rawText: string,
     pageTexts: string[] = [rawText],
+    parsedOverride?: ParsedVetRecord,
   ) {
     this.ocrDebug('parseAndPersist start', {
       documentId,
       textChars: rawText.length,
       pageCount: pageTexts.length,
     });
-    const parsed = parseVetRecordText(rawText);
+    const parsed = parsedOverride ?? parseVetRecordText(rawText);
     const document = await this.prisma.document.findUnique({
       where: { id: documentId },
       include: {
@@ -806,9 +962,11 @@ export class OcrService {
             reminders: [],
           }));
 
-      const highConfidenceNames = new Set(
-        extractHighConfidencePetNamesFromRawText(rawText).map((name) => normalizePetName(name)),
-      );
+      const highConfidenceNames = parsedOverride
+        ? new Set(parsed.petSections.map((section) => normalizePetName(section.petName)))
+        : new Set(
+            extractHighConfidencePetNamesFromRawText(rawText).map((name) => normalizePetName(name)),
+          );
       this.ocrDebug('Candidate extraction', {
         parsedSectionCount: parsedSections.length,
         highConfidenceNames: Array.from(highConfidenceNames),
@@ -818,7 +976,10 @@ export class OcrService {
         if (document.pet && normalizePetName(section.petName) === normalizePetName(document.pet.name)) {
           return true;
         }
-        return highConfidenceNames.has(normalizePetName(section.petName));
+        if (highConfidenceNames.has(normalizePetName(section.petName))) {
+          return true;
+        }
+        return section.totalCharges !== undefined;
       });
 
       if (!vettedSections.length) {

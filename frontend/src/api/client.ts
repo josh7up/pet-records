@@ -95,6 +95,7 @@ export const api = {
     if (payload.petId) formData.append('petId', payload.petId);
     if (payload.clinicId) formData.append('clinicId', payload.clinicId);
     if (payload.visitDate) formData.append('visitDate', payload.visitDate);
+    if (payload.ocrPageCount) formData.append('ocrPageCount', String(payload.ocrPageCount));
     return upload('/documents/upload-images', formData);
   },
   deleteDocument: (documentId: string) => del(`/documents/${documentId}`),

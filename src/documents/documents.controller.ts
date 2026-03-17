@@ -25,6 +25,77 @@ import { UploadDocumentDto } from './dto/upload-document.dto';
 import { UpsertExtractedFieldsDto } from './dto/upsert-extracted-fields.dto';
 import { uploadStorage } from './utils/multer-upload';
 
+const parseDateFromFilename = (name: string) => {
+  const match = name.match(/(\d{4})(\d{2})(\d{2})(?:[_-]?(\d{2})(\d{2})(\d{2}))?/);
+  if (!match) {
+    return null;
+  }
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw] = match;
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  const hour = hourRaw ? Number(hourRaw) : 0;
+  const minute = minuteRaw ? Number(minuteRaw) : 0;
+  const second = secondRaw ? Number(secondRaw) : 0;
+  if (
+    Number.isNaN(year) ||
+    Number.isNaN(month) ||
+    Number.isNaN(day) ||
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    Number.isNaN(second)
+  ) {
+    return null;
+  }
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59 ||
+    second < 0 ||
+    second > 59
+  ) {
+    return null;
+  }
+  const timestamp = Date.UTC(year, month - 1, day, hour, minute, second);
+  const date = new Date(timestamp);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return timestamp;
+};
+
+const sortFilesByFilenameDate = (files: Express.Multer.File[]) => {
+  const annotated = files.map((file, index) => {
+    const sourceName = file.originalname || file.filename || '';
+    return {
+      file,
+      index,
+      timestamp: parseDateFromFilename(sourceName),
+    };
+  });
+  annotated.sort((a, b) => {
+    if (a.timestamp != null && b.timestamp != null) {
+      if (a.timestamp === b.timestamp) {
+        return a.index - b.index;
+      }
+      return a.timestamp - b.timestamp;
+    }
+    if (a.timestamp != null) return -1;
+    if (b.timestamp != null) return 1;
+    return a.index - b.index;
+  });
+  return annotated.map((item) => item.file);
+};
+
 @Controller('documents')
 export class DocumentsController {
   constructor(
@@ -71,17 +142,22 @@ export class DocumentsController {
     if (!files?.length) {
       throw new BadRequestException('Image upload missing');
     }
+    const orderedFiles = sortFilesByFilenameDate(files);
     await this.ocrService
-      .assertNoDuplicateInvoiceForUpload(dto, files)
+      .assertNoDuplicateInvoiceForUpload(dto, orderedFiles)
       .catch(async (error) => {
         await Promise.all(files.map(async (file) => unlink(file.path).catch(() => undefined)));
         throw error;
       });
 
-    const document = await this.documentsService.createFromImages(dto, files);
+    const document = await this.documentsService.createFromImages(dto, orderedFiles);
+    const ocrPageCount = dto.ocrPageCount && dto.ocrPageCount > 0
+      ? Math.min(dto.ocrPageCount, files.length)
+      : undefined;
+    const ocrFiles = ocrPageCount ? files.slice(0, ocrPageCount) : orderedFiles;
     const ocr = await this.ocrService.processUploadedImages(
       document.id,
-      files.map((file) => file.path),
+      ocrFiles.map((file) => file.path),
     );
     await Promise.all(files.map(async (file) => unlink(file.path).catch(() => undefined)));
 

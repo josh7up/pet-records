@@ -11,6 +11,7 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
   const [mode, setMode] = useState<UploadMode>('single');
   const [singleFile, setSingleFile] = useState<File | null>(null);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [ocrPageCount, setOcrPageCount] = useState('');
   const [status, setStatus] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -20,7 +21,13 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
 
     try {
       setSubmitting(true);
-      const payload = {};
+      const payload: { ocrPageCount?: number } = {};
+      if (mode === 'images' && ocrPageCount.trim()) {
+        const count = Number(ocrPageCount);
+        if (!Number.isNaN(count) && count > 0) {
+          payload.ocrPageCount = count;
+        }
+      }
 
       if (mode === 'single') {
         if (!singleFile) {
@@ -36,6 +43,7 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
         }
         setSingleFile(null);
         setImageFiles([]);
+        setOcrPageCount('');
         return;
       } else {
         if (!imageFiles.length) {
@@ -51,6 +59,7 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
         }
         setSingleFile(null);
         setImageFiles([]);
+        setOcrPageCount('');
         return;
       }
     } catch (error) {
@@ -63,7 +72,7 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
   return (
     <section className="panel">
       <h2>Upload record</h2>
-      <form className="grid" onSubmit={submit}>
+      <form className="stacked" onSubmit={submit}>
         <label className="field">
           Upload mode
           <select value={mode} onChange={(event) => setMode(event.target.value as UploadMode)}>
@@ -82,18 +91,32 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
             />
           </label>
         ) : (
-          <label className="field full">
-            Record pages (JPG/PNG)
-            <input
-              type="file"
-              accept="image/png,image/jpeg"
-              multiple
-              onChange={(event) => setImageFiles(Array.from(event.target.files || []))}
-            />
-          </label>
+          <>
+            <label className="field full">
+              Record pages (JPG/PNG)
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                multiple
+                onChange={(event) => setImageFiles(Array.from(event.target.files || []))}
+              />
+            </label>
+            <label className="field">
+              Pages to OCR
+              <input
+                type="number"
+                min={1}
+                max={25}
+                placeholder="All pages"
+                value={ocrPageCount}
+                onChange={(event) => setOcrPageCount(event.target.value)}
+              />
+              <span className="hint">OCR only the first N pages; remaining pages are still attached.</span>
+            </label>
+          </>
         )}
 
-        <button className="primary" type="submit" disabled={submitting}>
+        <button className="primary full" type="submit" disabled={submitting}>
           {submitting ? 'Uploading...' : 'Upload record'}
         </button>
       </form>

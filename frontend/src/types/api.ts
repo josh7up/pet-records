@@ -98,4 +98,5 @@ export interface UploadRecordPayload {
   petId?: string;
   clinicId?: string;
   visitDate?: string;
+  ocrPageCount?: number;
 }
