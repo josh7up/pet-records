@@ -87,8 +87,15 @@ export function App() {
     try {
       const query = toQueryString(filters);
       const data = await api.searchVisits(query);
-      setVisits(data.data);
-      setSelectedVisit(data.data[0]);
+      const sorted = [...data.data].sort((a, b) => {
+        const [ay, am, ad] = a.visitDate.slice(0, 10).split('-').map(Number);
+        const [by, bm, bd] = b.visitDate.slice(0, 10).split('-').map(Number);
+        const aKey = ay && am && ad ? new Date(ay, am - 1, ad).getTime() : 0;
+        const bKey = by && bm && bd ? new Date(by, bm - 1, bd).getTime() : 0;
+        return bKey - aKey;
+      });
+      setVisits(sorted);
+      setSelectedVisit(sorted[0]);
       if (filters.petId) {
         setSelectedPetId(filters.petId);
       }
@@ -104,8 +111,15 @@ export function App() {
     await loadReviewDocuments();
     try {
       const data = await api.searchVisits('pageSize=50');
-      setVisits(data.data);
-      setSelectedVisit(data.data[0]);
+      const sorted = [...data.data].sort((a, b) => {
+        const [ay, am, ad] = a.visitDate.slice(0, 10).split('-').map(Number);
+        const [by, bm, bd] = b.visitDate.slice(0, 10).split('-').map(Number);
+        const aKey = ay && am && ad ? new Date(ay, am - 1, ad).getTime() : 0;
+        const bKey = by && bm && bd ? new Date(by, bm - 1, bd).getTime() : 0;
+        return bKey - aKey;
+      });
+      setVisits(sorted);
+      setSelectedVisit(sorted[0]);
     } catch (searchError) {
       setError((searchError as Error).message);
     }
