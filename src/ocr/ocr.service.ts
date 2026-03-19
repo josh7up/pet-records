@@ -19,7 +19,7 @@ import {
 } from '../documents/dto/review-pet-candidates.dto';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MockOcrDto } from './dto/mock-ocr.dto';
-import { ParsedPetSection, ParsedVetRecord, parseVetRecordText } from './mock-vet-record.parser';
+import { ParsedPetSection, ParsedVetRecord } from './mock-vet-record.parser';
 import type { UploadDocumentDto } from '../documents/dto/upload-document.dto';
 
 const dynamicImport = new Function(
@@ -44,163 +44,8 @@ function normalizePetName(value: string) {
     .toLowerCase();
 }
 
-function extractHighConfidencePetNamesFromRawText(rawText: string) {
-  const lines = rawText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const stopwords = new Set([
-    'golden',
-    'corner',
-    'veterinary',
-    'hospital',
-    'date',
-    'for',
-    'qty',
-    'description',
-    'price',
-    'discount',
-    'patient',
-    'total',
-    'charges',
-    'payments',
-    'balance',
-    'old',
-    'new',
-    'invoice',
-    'account',
-    'printed',
-    'visa',
-    'payment',
-    'reminders',
-    'weight',
-    'last',
-    'done',
-    'annual',
-    'exam',
-    'rabies',
-    'purevax',
-    'combo',
-    'test',
-    'feline',
-    'monitoring',
-    'snap',
-    'thyroid',
-    'intestinal',
-    'flotation',
-    'credit',
-    'card',
-    'fee',
-    'recomb',
-    'profile',
-  ]);
-
-  const scoreByName = new Map<string, number>();
-  const bump = (name: string, score: number) => {
-    scoreByName.set(name, (scoreByName.get(name) || 0) + score);
-  };
-
-  const normalizeCandidate = (value: string) => {
-    const normalized = value.replace(/[^A-Za-z' -]/g, '').replace(/\s+/g, ' ').trim();
-    if (!/^[A-Za-z][A-Za-z' -]{1,24}$/.test(normalized)) {
-      return undefined;
-    }
-
-    const tokenCount = normalized.split(' ').filter(Boolean).length;
-    if (tokenCount > 2) {
-      return undefined;
-    }
-
-    const lettersOnly = normalized.replace(/[^A-Za-z]/g, '');
-    if (lettersOnly.length < 3 || lettersOnly.length > 20) {
-      return undefined;
-    }
-
-    const upper = lettersOnly.replace(/[^A-Z]/g, '').length;
-    const lower = lettersOnly.replace(/[^a-z]/g, '').length;
-    const firstToken = normalized.split(' ')[0]?.toLowerCase() || '';
-    if (stopwords.has(firstToken)) {
-      return undefined;
-    }
-    if (lower === 0 && lettersOnly.length > 5) {
-      return undefined;
-    }
-    if (upper / lettersOnly.length > 0.8 && lettersOnly.length >= 5) {
-      return undefined;
-    }
-
-    return normalized
-      .toLowerCase()
-      .split(' ')
-      .map((part) => `${part[0]?.toUpperCase() || ''}${part.slice(1)}`)
-      .join(' ');
-  };
-
-  for (const line of lines) {
-    const reminderMatch = line.match(
-      /reminders?\s*for[^A-Za-z]*([A-Za-z][A-Za-z' -]{1,30})(?:\s*\(|\s*$)/i,
-    );
-    if (reminderMatch) {
-      const normalized = normalizeCandidate(reminderMatch[1]);
-      if (normalized) {
-        bump(normalized, 6);
-      }
-    }
-  }
-
-  for (const line of lines) {
-    const pairRegex = /([A-Za-z][A-Za-z' -]{1,30})\s+(-?\d+\.\d{2})/g;
-    let match: RegExpExecArray | null = null;
-    while ((match = pairRegex.exec(line)) !== null) {
-      const normalized = normalizeCandidate(match[1]);
-      if (normalized) {
-        bump(normalized, 4);
-      }
-    }
-  }
-
-  const patientIndex = lines.findIndex((line) => /^patient$/i.test(line));
-  if (patientIndex >= 0) {
-    for (let index = patientIndex + 1; index < lines.length; index += 1) {
-      const line = lines[index];
-      if (/^reminders?\s+for/i.test(line)) {
-        break;
-      }
-      const nameAmount = line.match(/^([A-Za-z][A-Za-z' -]{1,30})\s+(-?\d+\.\d{2})$/);
-      if (nameAmount) {
-        const normalized = normalizeCandidate(nameAmount[1]);
-        if (normalized) {
-          bump(normalized, 5);
-        }
-      }
-
-      if (/^[A-Za-z][A-Za-z' -]{2,24}$/.test(line) && !/^(total|charges?)$/i.test(line)) {
-        const nextLine = lines[index + 1] || '';
-        if (/^-?\d+\.\d{2}$/.test(nextLine)) {
-          const normalized = normalizeCandidate(line);
-          if (normalized) {
-            bump(normalized, 4);
-          }
-        }
-      }
-    }
-  }
-
-  for (const line of lines) {
-    const onlyDateAndName = line.match(/^\d{2}[-/]\d{2}[-/]\d{2}\s+([A-Za-z][A-Za-z' -]{1,20})$/);
-    if (onlyDateAndName) {
-      const normalized = normalizeCandidate(onlyDateAndName[1]);
-      if (normalized) {
-        bump(normalized, 3);
-      }
-    }
-  }
-
-  return Array.from(scoreByName.entries())
-    .filter(([, score]) => score >= 5)
-    .sort((a, b) => b[1] - a[1])
-    .map(([name]) => name);
+function extractHighConfidencePetNamesFromRawText(_: string) {
+  return [];
 }
 
 @Injectable()
@@ -410,7 +255,6 @@ export class OcrService {
   private async runGoogleStudioExtract(
     paths: string[],
     mimeTypeOverrides?: string[],
-    promptOverride?: string,
     responseMimeType?: string,
   ) {
     const apiKey = this.getGoogleAiStudioKey();
@@ -471,7 +315,7 @@ export class OcrService {
       'Return only JSON. If a value is missing, use null or an empty array. Do not include commentary.';
 
     const parts: Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> = [
-      { text: structuredPrompt }
+      { text: structuredPrompt },
     ];
 
     for (let index = 0; index < paths.length; index += 1) {
@@ -535,12 +379,13 @@ export class OcrService {
   }
 
   private parseStructuredJson(text: string) {
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
+    const trimmed = text.trim();
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
     if (start === -1 || end === -1 || end <= start) {
       throw new Error('No JSON object found in structured OCR response.');
     }
-    const sliced = text.slice(start, end + 1);
+    const sliced = trimmed.slice(start, end + 1);
     return JSON.parse(sliced) as {
       vetClinic?: string;
       visitDate?: string;
@@ -615,6 +460,40 @@ export class OcrService {
     const allReminders = petSections.flatMap((section) => section.reminders);
     const firstSection = petSections[0];
 
+    const extractedFields: ParsedVetRecord['extractedFields'] = [
+      structured.visitDate
+        ? { fieldName: 'visit_date', fieldValue: structured.visitDate, confidence: 0.95 }
+        : undefined,
+      structured.invoiceNumber
+        ? {
+            fieldName: 'invoice_number',
+            fieldValue: String(structured.invoiceNumber),
+            confidence: 0.94,
+          }
+        : undefined,
+      structured.accountNumber
+        ? {
+            fieldName: 'account_number',
+            fieldValue: String(structured.accountNumber),
+            confidence: 0.92,
+          }
+        : undefined,
+      typeof structured.totalCharges === 'number'
+        ? {
+            fieldName: 'receipt_total_price',
+            fieldValue: String(structured.totalCharges),
+            confidence: 0.86,
+          }
+        : undefined,
+      typeof structured.paymentAmount === 'number'
+        ? {
+            fieldName: 'payment_amount',
+            fieldValue: String(structured.paymentAmount),
+            confidence: 0.82,
+          }
+        : undefined,
+    ].filter((value): value is NonNullable<typeof value> => Boolean(value));
+
     return {
       clinicName: structured.vetClinic?.trim() || undefined,
       visitDate: this.parseIsoDate(structured.visitDate),
@@ -631,7 +510,7 @@ export class OcrService {
       lineItems: allLineItems,
       reminders: allReminders,
       petSections,
-      extractedFields: [],
+      extractedFields,
       printedAt: undefined,
     };
   }
@@ -852,7 +731,11 @@ export class OcrService {
     }
 
     const rawText = document.pages.map((page) => page.fullText).join('\n\n');
-    await this.parseAndPersist(documentId, rawText, document.pages.map((page) => page.fullText));
+    await this.parseAndPersist(
+      documentId,
+      rawText,
+      document.pages.map((page) => page.fullText),
+    );
 
     return this.prisma.document.findUnique({
       where: { id: documentId },
@@ -874,7 +757,8 @@ export class OcrService {
       textChars: rawText.length,
       pageCount: pageTexts.length,
     });
-    const parsed = parsedOverride ?? parseVetRecordText(rawText);
+    const parsed =
+      parsedOverride ?? this.mapStructuredToParsed(this.parseStructuredJson(rawText));
     const document = await this.prisma.document.findUnique({
       where: { id: documentId },
       include: {
@@ -953,20 +837,11 @@ export class OcrService {
 
       const parsedSections: ParsedPetSection[] = parsed.petSections.length
         ? parsed.petSections
-        : extractHighConfidencePetNamesFromRawText(rawText).map((petName) => ({
-            petName,
-            totalCharges: undefined,
-            weightValue: undefined,
-            weightUnit: undefined,
-            lineItems: [],
-            reminders: [],
-          }));
+        : [];
 
-      const highConfidenceNames = parsedOverride
-        ? new Set(parsed.petSections.map((section) => normalizePetName(section.petName)))
-        : new Set(
-            extractHighConfidencePetNamesFromRawText(rawText).map((name) => normalizePetName(name)),
-          );
+      const highConfidenceNames = new Set(
+        parsed.petSections.map((section) => normalizePetName(section.petName)),
+      );
       this.ocrDebug('Candidate extraction', {
         parsedSectionCount: parsedSections.length,
         highConfidenceNames: Array.from(highConfidenceNames),

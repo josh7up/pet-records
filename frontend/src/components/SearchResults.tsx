@@ -11,6 +11,14 @@ export function SearchResults({ visits, selectedVisitId, onSelect }: SearchResul
     return <p className="empty">No records found for this filter set.</p>;
   }
 
+  const formatLocalDate = (value: string) => {
+    const parts = value.slice(0, 10).split('-');
+    if (parts.length !== 3) return value;
+    const [year, month, day] = parts.map(Number);
+    if (!year || !month || !day) return value;
+    return new Date(year, month - 1, day).toLocaleDateString();
+  };
+
   return (
     <div className="results">
       {visits.map((visit) => (
@@ -22,7 +30,7 @@ export function SearchResults({ visits, selectedVisitId, onSelect }: SearchResul
         >
           <div>
             <h3>{visit.pet.name}</h3>
-            <p>{new Date(visit.visitDate).toLocaleDateString()}</p>
+            <p>{formatLocalDate(visit.visitDate)}</p>
           </div>
           <p>Invoice: {visit.invoiceNumber || 'n/a'}</p>
           <p>

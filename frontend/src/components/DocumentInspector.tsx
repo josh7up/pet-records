@@ -102,32 +102,24 @@ export function DocumentInspector({ visit, onDeleted }: DocumentInspectorProps) 
   const perPetTotals = parsedVisitsWithFilteredItems.map((parsedVisit) =>
     parsedVisit.lineItems.reduce((sum, item) => sum + toNumber(item.totalPrice), 0),
   );
-  const receiptTotalPrice = perPetTotals.reduce((sum, value) => sum + value, 0);
-  const extractPaymentFromBalanceSummary = (text: string) => {
-    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const headerIndex = lines.findIndex((line) =>
-      /old\s+balance\s+charges\s+payments\s+new\s+balance/i.test(line),
-    );
-    if (headerIndex < 0) return undefined;
-    for (let index = headerIndex + 1; index < Math.min(lines.length, headerIndex + 8); index += 1) {
-      const line = lines[index];
-      if (/^patient\b|^reminders?\s+for:/i.test(line)) break;
-      const amounts = line.match(/-?\d+\.\d{2}/g);
-      if (!amounts || amounts.length < 4) continue;
-      const parsed = Number(amounts[2]);
-      if (Number.isFinite(parsed)) return Math.abs(parsed);
-    }
-    return undefined;
-  };
   const combinedOcrText = (documentDetails?.pages || activeVisit.document.pages)
     .map((page) => page.fullText)
     .join('\n\n');
-  const paymentFromSummary = extractPaymentFromBalanceSummary(combinedOcrText);
+  const extractedFields = documentDetails?.extractedFields || activeVisit.document.extractedFields || [];
+  const getExtractedNumber = (fieldName: string) => {
+    const match = extractedFields.find((field) => field.fieldName === fieldName);
+    if (!match) return undefined;
+    const parsed = Number(match.fieldValue);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  const receiptTotalFromExtracted = getExtractedNumber('receipt_total_price');
+  const receiptTotalPrice = receiptTotalFromExtracted ?? perPetTotals.reduce((sum, value) => sum + value, 0);
+  const paymentFromExtracted = getExtractedNumber('payment_amount');
   const paymentValueFromData = parsedVisitsWithFilteredItems.find(
     (parsedVisit) => Math.abs(toNumber(parsedVisit.totalPayments)) > 0,
   );
   const paymentAmount =
-    paymentFromSummary ??
+    paymentFromExtracted ??
     (paymentValueFromData ? Math.abs(toNumber(paymentValueFromData.totalPayments)) : undefined) ??
     receiptTotalPrice;
   const visitDate = parsedVisits[0]?.visitDate || activeVisit.visitDate;
