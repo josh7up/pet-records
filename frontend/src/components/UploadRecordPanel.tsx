@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { api } from '../api/client';
+import type { DocumentRecord } from '../types/api';
 
 type UploadMode = 'single' | 'images';
 
@@ -13,11 +14,39 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [ocrPageCount, setOcrPageCount] = useState('');
   const [status, setStatus] = useState('');
+  const [uploadSummary, setUploadSummary] = useState<{
+    visitDate?: string;
+    invoiceNumber?: string | null;
+    petNames: string[];
+    visitIds: string[];
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return 'n/a';
+    const raw = value.slice(0, 10);
+    const [year, month, day] = raw.split('-');
+    if (year && month && day) {
+      return `${month}/${day}/${year}`;
+    }
+    return raw;
+  };
+
+  const buildSummary = (document: DocumentRecord) => {
+    const visits = document.visits || [];
+    const petNames = Array.from(new Set(visits.map((visit) => visit.pet.name))).filter(Boolean);
+    return {
+      visitDate: visits[0]?.visitDate,
+      invoiceNumber: visits[0]?.invoiceNumber ?? null,
+      petNames,
+      visitIds: visits.map((visit) => visit.id),
+    };
+  };
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setStatus('');
+    setUploadSummary(null);
 
     try {
       setSubmitting(true);
@@ -39,6 +68,8 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
         const isFailed = result?.ocr?.status === 'failed';
         setStatus(message);
         if (!isFailed) {
+          const details = await api.document(result.document.id);
+          setUploadSummary(buildSummary(details));
           onUploaded();
         }
         setSingleFile(null);
@@ -55,6 +86,8 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
         const isFailed = result?.ocr?.status === 'failed';
         setStatus(message);
         if (!isFailed) {
+          const details = await api.document(result.document.id);
+          setUploadSummary(buildSummary(details));
           onUploaded();
         }
         setSingleFile(null);
@@ -120,6 +153,22 @@ export function UploadRecordPanel({ onUploaded }: UploadRecordPanelProps) {
           {submitting ? 'Uploading...' : 'Upload record'}
         </button>
       </form>
+      {uploadSummary ? (
+        <div className="upload-summary">
+          <p><strong>visit_date:</strong> {formatDate(uploadSummary.visitDate)}</p>
+          <p>
+            <strong>invoice_number:</strong>{' '}
+            {uploadSummary.invoiceNumber && uploadSummary.visitIds[0] ? (
+              <a href={`/?tab=search&visitId=${uploadSummary.visitIds[0]}`}>
+                {uploadSummary.invoiceNumber}
+              </a>
+            ) : (
+              uploadSummary.invoiceNumber || 'n/a'
+            )}
+          </p>
+          <p><strong>pet_names:</strong> {uploadSummary.petNames.join(', ') || 'n/a'}</p>
+        </div>
+      ) : null}
       {status ? (
         <p className={/failed|missing|choose|not configured|duplicate/i.test(status) ? 'error' : ''}>
           {status}

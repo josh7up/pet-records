@@ -19,27 +19,51 @@ export function SearchResults({ visits, selectedVisitId, onSelect }: SearchResul
     return new Date(year, month - 1, day).toLocaleDateString();
   };
 
+  const grouped = new Map<string, { primary: SearchVisit; pets: string[]; services: string[] }>();
+  for (const visit of visits) {
+    const key = visit.document.id;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, {
+        primary: visit,
+        pets: [visit.pet.name],
+        services: visit.lineItems.map((item) => item.description),
+      });
+      continue;
+    }
+    existing.pets.push(visit.pet.name);
+    existing.services.push(...visit.lineItems.map((item) => item.description));
+  }
+
+  const entries = Array.from(grouped.values()).map((entry) => ({
+    ...entry,
+    pets: Array.from(new Set(entry.pets)).filter(Boolean),
+    services: Array.from(new Set(entry.services)).filter(Boolean),
+  }));
+
   return (
     <div className="results">
-      {visits.map((visit) => (
+      {entries.map((entry) => {
+        const { primary } = entry;
+        const isSelected = selectedVisitId === primary.id;
+        return (
         <button
-          key={visit.id}
-          className={`result-card ${selectedVisitId === visit.id ? 'selected' : ''}`}
-          onClick={() => onSelect(visit)}
+          key={primary.document.id}
+          className={`result-card ${isSelected ? 'selected' : ''}`}
+          onClick={() => onSelect(primary)}
           type="button"
         >
           <div>
-            <h3>{visit.pet.name}</h3>
-            <p>{formatLocalDate(visit.visitDate)}</p>
+            <h3 className="pet-names">{entry.pets.join(', ') || 'n/a'}</h3>
+            <p>{formatLocalDate(primary.visitDate)}</p>
           </div>
-          <p>Invoice: {visit.invoiceNumber || 'n/a'}</p>
+          <p>Invoice: {primary.invoiceNumber || 'n/a'}</p>
           <p>
             Services:{' '}
-            {visit.lineItems.map((item) => item.description).slice(0, 2).join(', ') || 'n/a'}
+            {entry.services.slice(0, 2).join(', ') || 'n/a'}
           </p>
-          <p>Status: {visit.document.ocrStatus}</p>
         </button>
-      ))}
+      )})}
     </div>
   );
 }

@@ -624,7 +624,7 @@ export class OcrService {
       documentId,
       status: 'parsed',
       provider: 'google-ai-studio',
-      message: 'OCR and parsing completed.',
+      message: 'Document upload completed successfully',
     };
   }
 

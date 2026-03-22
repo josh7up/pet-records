@@ -36,6 +36,45 @@ export function App() {
   const [toast, setToast] = useState('');
   const [page, setPage] = useState<PageId>('upload');
 
+  const readVisitIdFromUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('visitId') || '';
+  };
+
+  const readTabFromUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    if (tab === 'upload' || tab === 'search' || tab === 'weight') {
+      return tab;
+    }
+    return '';
+  };
+
+  const setPageAndRoute = (nextPage: PageId, visitId?: string, replace = false) => {
+    setPage(nextPage);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', nextPage);
+    if (visitId) {
+      url.searchParams.set('visitId', visitId);
+    } else if (nextPage !== 'search') {
+      url.searchParams.delete('visitId');
+    }
+    if (replace) {
+      window.history.replaceState({}, '', url.toString());
+    } else {
+      window.history.pushState({}, '', url.toString());
+    }
+  };
+
+  const selectVisit = (visit?: SearchVisit, replace = false) => {
+    setSelectedVisit(visit);
+    if (visit?.id) {
+      setPageAndRoute('search', visit.id, replace);
+    } else {
+      setPageAndRoute(page, undefined, replace);
+    }
+  };
+
   const selectedPet = useMemo(
     () => pets.find((pet) => pet.id === selectedPetId),
     [pets, selectedPetId],
@@ -62,7 +101,59 @@ export function App() {
   useEffect(() => {
     void loadBaseData();
     void loadReviewDocuments();
+    const urlVisitId = readVisitIdFromUrl();
+    const urlTab = readTabFromUrl();
+    if (urlTab) {
+      setPage(urlTab);
+    }
+    if (urlVisitId && (!urlTab || urlTab === 'search')) {
+      setPageAndRoute('search', urlVisitId, true);
+      void (async () => {
+        try {
+          const data = await api.searchVisits('pageSize=100');
+          const sorted = [...data.data].sort((a, b) => {
+            const [ay, am, ad] = a.visitDate.slice(0, 10).split('-').map(Number);
+            const [by, bm, bd] = b.visitDate.slice(0, 10).split('-').map(Number);
+            const aKey = ay && am && ad ? new Date(ay, am - 1, ad).getTime() : 0;
+            const bKey = by && bm && bd ? new Date(by, bm - 1, bd).getTime() : 0;
+            return bKey - aKey;
+          });
+          setVisits(sorted);
+          const match = sorted.find((visit) => visit.id === urlVisitId);
+          if (match) {
+            selectVisit(match, true);
+            setSelectedPetId(match.pet.id);
+          } else {
+            selectVisit(sorted[0], true);
+          }
+        } catch (loadError) {
+          setError((loadError as Error).message);
+        }
+      })();
+    }
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      const visitId = params.get('visitId') || '';
+      if (tab === 'upload' || tab === 'search' || tab === 'weight') {
+        setPage(tab);
+      }
+      if (visitId) {
+        const match = visits.find((visit) => visit.id === visitId);
+        if (match) {
+          setSelectedVisit(match);
+          setSelectedPetId(match.pet.id);
+        }
+      } else if (tab !== 'search') {
+        setSelectedVisit(undefined);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [visits]);
 
   useEffect(() => {
     if (!selectedPetId) {
@@ -95,7 +186,9 @@ export function App() {
         return bKey - aKey;
       });
       setVisits(sorted);
-      setSelectedVisit(sorted[0]);
+      const urlVisitId = readVisitIdFromUrl();
+      const nextSelected = urlVisitId ? sorted.find((visit) => visit.id === urlVisitId) : sorted[0];
+      selectVisit(nextSelected);
       if (filters.petId) {
         setSelectedPetId(filters.petId);
       }
@@ -106,9 +199,12 @@ export function App() {
     }
   }
 
-  async function refreshAfterUpload() {
+  async function refreshAfterUpload(navigateToSearch = true) {
     await loadBaseData();
     await loadReviewDocuments();
+    if (!navigateToSearch) {
+      return;
+    }
     try {
       const data = await api.searchVisits('pageSize=50');
       const sorted = [...data.data].sort((a, b) => {
@@ -119,7 +215,9 @@ export function App() {
         return bKey - aKey;
       });
       setVisits(sorted);
-      setSelectedVisit(sorted[0]);
+      const urlVisitId = readVisitIdFromUrl();
+      const nextSelected = urlVisitId ? sorted.find((visit) => visit.id === urlVisitId) : sorted[0];
+      selectVisit(nextSelected);
     } catch (searchError) {
       setError((searchError as Error).message);
     }
@@ -143,21 +241,21 @@ export function App() {
         <button
           type="button"
           className={`tab-btn ${page === 'upload' ? 'active' : ''}`}
-          onClick={() => setPage('upload')}
+          onClick={() => setPageAndRoute('upload')}
         >
           Upload record
         </button>
         <button
           type="button"
           className={`tab-btn ${page === 'search' ? 'active' : ''}`}
-          onClick={() => setPage('search')}
+          onClick={() => setPageAndRoute('search')}
         >
           Search records
         </button>
         <button
           type="button"
           className={`tab-btn ${page === 'weight' ? 'active' : ''}`}
-          onClick={() => setPage('weight')}
+          onClick={() => setPageAndRoute('weight')}
         >
           Weight trend
         </button>
@@ -170,7 +268,7 @@ export function App() {
         <>
           <UploadRecordPanel
             onUploaded={() => {
-              void refreshAfterUpload();
+              void refreshAfterUpload(false);
             }}
           />
 
@@ -201,7 +299,7 @@ export function App() {
               visits={visits}
               selectedVisitId={selectedVisit?.id}
               onSelect={(visit) => {
-                setSelectedVisit(visit);
+                selectVisit(visit);
                 setSelectedPetId(visit.pet.id);
               }}
             />

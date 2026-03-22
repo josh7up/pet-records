@@ -136,6 +136,7 @@ button {
   display: grid;
   gap: 0.75rem;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-items: start;
 }
 
 .review-doc {
@@ -165,6 +166,25 @@ button {
   background: #f4fafc;
   border: 1px solid #cde4ec;
   cursor: pointer;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.result-card > * {
+  margin: 0 0 0.4rem;
+}
+
+.result-card > *:last-child {
+  margin-bottom: 0;
+}
+
+.pet-names {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .result-card.selected {
@@ -224,6 +244,14 @@ button {
   border-radius: 8px;
   overflow: auto;
   white-space: pre-wrap;
+}
+
+.upload-summary {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid #cde4ec;
+  border-radius: 8px;
+  background: #f8fcfe;
 }
 
 .chart-wrap {
