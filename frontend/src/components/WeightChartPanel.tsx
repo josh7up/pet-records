@@ -19,9 +19,18 @@ export function WeightChartPanel({ pet, points }: WeightChartPanelProps) {
     return <p className="empty">Choose a pet to view its weight trend.</p>;
   }
 
+  const formatLocalDate = (value: string) => {
+    const raw = value.slice(0, 10);
+    const parts = raw.split('-');
+    if (parts.length !== 3) return value;
+    const [year, month, day] = parts.map(Number);
+    if (!year || !month || !day) return value;
+    return new Date(year, month - 1, day).toLocaleDateString();
+  };
+
   const chartData = points.map((point) => ({
     id: point.id,
-    date: new Date(point.measuredAt).toLocaleDateString(),
+    date: formatLocalDate(point.measuredAt),
     weight: Number(point.weightValue),
     unit: point.weightUnit,
   }));
