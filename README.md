@@ -23,6 +23,24 @@ npm install
 cp .env.example .env
 ```
 
+If you use Docker Compose for PostgreSQL/pgAdmin, set these in `.env` too:
+
+```bash
+POSTGRES_DB=pet_records
+POSTGRES_USER=your_db_user
+POSTGRES_PASSWORD=your_db_password
+PGADMIN_DEFAULT_EMAIL=admin@example.com
+PGADMIN_DEFAULT_PASSWORD=your_pgadmin_password
+```
+
+Your Prisma connection string should match those values, for example:
+
+```bash
+DATABASE_URL="postgresql://your_db_user:your_db_password@localhost:5432/pet_records?schema=public"
+```
+
+Keep `DATABASE_URL` as a fully expanded value. Prisma expects a complete connection string, and plain `.env` files are not a reliable place to build it from `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` via variable interpolation.
+
 3. Run migrations:
 
 ```bash
@@ -43,6 +61,59 @@ npm run start:dev
 
 Backend API base URL: `http://localhost:3000/api`
 Swagger UI: `http://localhost:3000/api/docs`
+
+## Docker Compose
+
+Use Docker Compose if you want PostgreSQL and pgAdmin running locally without installing them directly on your machine.
+
+1. Copy the env file and fill in the database and pgAdmin credentials:
+
+```bash
+cp .env.example .env
+```
+
+2. Start the containers:
+
+```bash
+docker compose up -d
+```
+
+3. Confirm the database is healthy:
+
+```bash
+docker compose ps
+```
+
+4. Run Prisma migrations against the containerized database:
+
+```bash
+npm run prisma:migrate
+```
+
+5. Optional: seed the database:
+
+```bash
+npm run prisma:seed
+```
+
+Even when Docker Compose uses `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`, keep `DATABASE_URL` explicitly defined in `.env` for Prisma instead of trying to compose it from those variables inside the same file.
+
+Services:
+- PostgreSQL: `localhost:5432`
+- pgAdmin: `http://localhost:5050`
+
+pgAdmin login:
+- Email: value of `PGADMIN_DEFAULT_EMAIL` in `.env`
+- Password: value of `PGADMIN_DEFAULT_PASSWORD` in `.env`
+
+Common Docker Compose commands:
+
+```bash
+docker compose down
+docker compose down -v
+```
+
+`docker compose down` stops the containers and preserves database data. `docker compose down -v` also removes the named volumes, which resets the local database and pgAdmin state.
 
 ## OCR prerequisites
 
