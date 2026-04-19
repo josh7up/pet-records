@@ -6,7 +6,7 @@ NestJS + PostgreSQL backend for OCR pet records and a React + Vite frontend for 
 
 - Backend: NestJS (REST MVC), Prisma, PostgreSQL
 - Frontend: React + TypeScript + Vite + Recharts
-- OCR pipeline: queue stub + deterministic mock parser for vet invoice-style records
+- OCR pipeline: queue stub + deterministic parser for vet invoice-style records
 - Multi-pet parsing: one invoice document can produce multiple pet-specific visits
 
 ## Backend setup
@@ -107,25 +107,9 @@ Frontend URL: `http://localhost:5173`
 - `GET /api/documents/:id/file`
 - `DELETE /api/documents/:id`
 - `PATCH /api/documents/:id/fields`
-- `POST /api/ocr/:documentId/mock-parse`
 - `GET /api/visits`
 - `GET /api/records/search`
 - `GET /api/weights/pets/:petId`
-
-## Mock parser coverage
-
-The parser in `src/ocr/mock-vet-record.parser.ts` extracts data shaped like your sample invoice:
-
-- Clinic name/address/phone
-- Printed date, visit date, account number, invoice number
-- Line-item services and amounts
-- Totals (charges/payments/balance)
-- Pet name
-- Multiple pets in one invoice (`For` rows, patient totals, and reminders per pet)
-- Weight (value + unit)
-- Reminder due dates and last-done dates
-
-Seed OCR text is stored at `prisma/sample-record-ocr.txt`.
 
 ## Uploading new records
 

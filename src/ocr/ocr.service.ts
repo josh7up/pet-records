@@ -18,8 +18,7 @@ import {
   ReviewPetCandidatesDto,
 } from '../documents/dto/review-pet-candidates.dto';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { MockOcrDto } from './dto/mock-ocr.dto';
-import { ParsedPetSection, ParsedVetRecord } from './mock-vet-record.parser';
+import { ParsedPetSection, ParsedVetRecord } from './record.parser.types';
 import type { UploadDocumentDto } from '../documents/dto/upload-document.dto';
 
 const dynamicImport = new Function(
@@ -664,10 +663,6 @@ export class OcrService {
       message:
         'Unsupported file type for OCR extraction. Upload PDF/JPG/PNG.',
     };
-  }
-
-  async mockParseDocument(documentId: string, dto: MockOcrDto) {
-    return this.parseAndPersist(documentId, dto.rawText, [dto.rawText]);
   }
 
   async reviewPetCandidates(documentId: string, dto: ReviewPetCandidatesDto) {
