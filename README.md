@@ -1,6 +1,8 @@
 # Pet Record System
 
-NestJS + PostgreSQL backend for OCR pet records and a React + Vite frontend for owners to search records, inspect scans, and view weight trends.
+This repository is an experiment in using agentic AI (particulary Codex) for a personally useful project. I needed a way to organize my various digitized pet veterinary records for easy search, and I also wanted a way to view a trend of my pets' weights over time.
+
+Gemini Flash is used to OCR pet records into a JSON representation that can then be deterministically parsed. NestJS and PostgreSQL are used on the backend, with a React/Vite frontend for searching records, inspecting scans, and viewing weight trends.
 
 ## Tech stack
 
